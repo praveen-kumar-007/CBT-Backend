@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CBT Admin Signup</title>
+    <style>
+      body { font-family: Segoe UI, sans-serif; background: #f0fff4; margin: 0; padding: 2rem; }
+      .card { max-width: 420px; margin: 2rem auto; background: #fff; padding: 1.25rem; border-radius: 12px; box-shadow: 0 10px 30px rgba(15,107,32,.12); }
+      h1 { margin-top: 0; color: #0c5f28; }
+      label { display: block; margin-top: .7rem; color: #1f3e2a; font-weight: 600; }
+      input, button { width: 100%; padding: .7rem; margin-top: .35rem; border-radius: 8px; border: 1px solid #bfe0c8; }
+      button { background: #0e7b35; color: #fff; border: none; margin-top: 1rem; font-weight: 600; cursor: pointer; }
+      #result { margin-top: 1rem; font-size: .9rem; color: #0e5f29; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Admin Signup</h1>
+      <form id="signupForm">
+        <label for="name">Name</label>
+        <input id="name" type="text" required />
+        <label for="email">Email</label>
+        <input id="email" type="email" required />
+        <label for="password">Password</label>
+        <input id="password" type="password" minlength="6" required />
+        <button type="submit">Create Admin</button>
+      </form>
+      <div id="result"></div>
+    </div>
+
+    <script>
+      const form = document.getElementById('signupForm');
+      const result = document.getElementById('result');
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        result.textContent = 'Please wait...';
+
+        try {
+          const response = await fetch('/api/auth/admin/signup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: document.getElementById('name').value,
+              email: document.getElementById('email').value,
+              password: document.getElementById('password').value
+            })
+          });
+
+          const data = await response.json();
+          if (!response.ok || data.success === false) {
+            throw new Error(data.message || 'Signup failed');
+          }
+
+          localStorage.setItem('adminToken', data.data.token);
+          localStorage.setItem('adminUser', JSON.stringify(data.data.user));
+          result.textContent = 'Signup successful. Redirecting to dashboard...';
+          setTimeout(() => {
+            window.location.href = '/admin/dashboard';
+          }, 500);
+        } catch (error) {
+          result.textContent = error.message;
+        }
+      });
+    </script>
+  </body>
+</html>
