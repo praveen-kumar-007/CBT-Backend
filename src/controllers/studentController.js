@@ -14,6 +14,22 @@ const shuffleArray = (arr) => {
   return copied;
 };
 
+const toSafeInt = (value, min = 0) => {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min) {
+    return min;
+  }
+  return parsed;
+};
+
+const toOriginalOptionIndex = (servedQuestion, shuffledIndex) => {
+  if (!Number.isInteger(shuffledIndex) || shuffledIndex < 0 || shuffledIndex > 3) {
+    return null;
+  }
+  const mapped = servedQuestion.optionOrder?.[shuffledIndex];
+  return Number.isInteger(mapped) && mapped >= 0 && mapped <= 3 ? mapped : null;
+};
+
 const getSectionsForStudents = async (req, res, next) => {
   try {
     const sections = await Section.find({ isActive: true }).sort({ createdAt: 1 });
@@ -119,7 +135,7 @@ const getQuestionsForStudent = async (req, res, next) => {
 
 const submitExam = async (req, res, next) => {
   try {
-    const { sectionId, sessionId, answers } = req.body;
+    const { sectionId, sessionId, answers, remark, examMeta } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(sectionId)) {
       return res.status(400).json({ success: false, message: 'Invalid section id.' });
@@ -191,6 +207,56 @@ const submitExam = async (req, res, next) => {
     let score = 0;
     let maxScore = 0;
 
+    const servedQuestionMap = new Map(session.servedQuestions.map((q) => [String(q.question), q]));
+
+    const normalizeQuestionInteractions = () => {
+      const rawInteractions = Array.isArray(examMeta?.questionInteractions)
+        ? examMeta.questionInteractions
+        : [];
+
+      const normalized = [];
+      const seenQuestionIds = new Set();
+
+      for (const interaction of rawInteractions) {
+        const questionId = String(interaction?.questionId || '');
+        if (!questionId || seenQuestionIds.has(questionId)) {
+          continue;
+        }
+
+        const servedQuestion = servedQuestionMap.get(questionId);
+        if (!servedQuestion) {
+          continue;
+        }
+
+        const rawHistory = Array.isArray(interaction?.selectionHistory)
+          ? interaction.selectionHistory
+          : [];
+
+        const selectionHistory = rawHistory
+          .map((idx) => toOriginalOptionIndex(servedQuestion, Number(idx)))
+          .filter((idx) => idx !== null);
+
+        const firstMapped = toOriginalOptionIndex(servedQuestion, Number(interaction?.firstSelectedOptionIndex));
+        const finalMapped = toOriginalOptionIndex(servedQuestion, Number(interaction?.finalSelectedOptionIndex));
+
+        normalized.push({
+          question: servedQuestion.question,
+          firstSelectedOptionIndex: firstMapped !== null
+            ? firstMapped
+            : (selectionHistory.length ? selectionHistory[0] : null),
+          finalSelectedOptionIndex: finalMapped !== null
+            ? finalMapped
+            : (selectionHistory.length ? selectionHistory[selectionHistory.length - 1] : null),
+          changeCount: toSafeInt(interaction?.changeCount, 0),
+          selectionHistory,
+        });
+
+        seenQuestionIds.add(questionId);
+      }
+
+      return normalized;
+    };
+
     const processedAnswers = session.servedQuestions.map((servedQuestion) => {
       const questionId = String(servedQuestion.question);
       const selectedShuffledIndex = answerMap.has(questionId)
@@ -224,6 +290,9 @@ const submitExam = async (req, res, next) => {
       };
     });
 
+    const cleanedRemark = typeof remark === 'string' ? remark.trim() : '';
+    const questionInteractions = normalizeQuestionInteractions();
+
     const submission = await Submission.create({
       student: req.user._id,
       section: sectionId,
@@ -231,7 +300,17 @@ const submitExam = async (req, res, next) => {
       totalQuestions: session.servedQuestions.length,
       attemptedQuestions,
       score,
-      maxScore
+      maxScore,
+      remark: cleanedRemark,
+      examMeta: {
+        terminatedDueToCheating: Boolean(examMeta?.terminatedDueToCheating),
+        terminationRemark: typeof examMeta?.terminationRemark === 'string'
+          ? examMeta.terminationRemark.trim()
+          : '',
+        cheatingAttempts: toSafeInt(examMeta?.cheatingAttempts, 0),
+        totalOptionChanges: toSafeInt(examMeta?.totalOptionChanges, 0),
+        questionInteractions,
+      }
     });
 
     session.isSubmitted = true;

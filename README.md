@@ -14,6 +14,7 @@ Deployment-ready backend for CBT Exam Simulator.
 - Exam submission by students.
 - Student scores and correct answers visible to admin only.
 - Admin-wise student result access including student-wise answers.
+- Cheating-aware submission metadata (termination remark, cheating attempts, option-change analytics).
 
 ## Tech Stack
 
@@ -44,6 +45,10 @@ FRONTEND_ADMIN_URL=http://localhost:3000
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_api_key
 CLOUDINARY_API_SECRET=your_api_secret
+ADMIN_ANALYTICS_RATE_WINDOW_MS=60000
+ADMIN_ANALYTICS_RATE_MAX_REQUESTS=60
+ADMIN_EXPORT_RATE_WINDOW_MS=600000
+ADMIN_EXPORT_RATE_MAX_REQUESTS=10
 ```
 
 3. Run in development:
@@ -85,8 +90,11 @@ npm start
 - `GET /api/admin/students/:studentId/submissions`
 - `DELETE /api/admin/students/:studentId`
 - `GET /api/admin/analytics`
+- `GET /api/admin/insights`
 - `GET /api/admin/submissions/recent`
 - `GET /api/admin/students/:studentId/submissions/export`
+
+Analytics and export routes are protected with admin audit logging and rate-limits for production hardening.
 
 ### Student (Bearer token required, role: student)
 
@@ -105,7 +113,23 @@ npm start
   "answers": [
     { "questionId": "mongo_question_id", "selectedOptionIndex": 1 },
     { "questionId": "mongo_question_id", "selectedOptionIndex": 3 }
-  ]
+  ],
+  "remark": "Exam terminated due to cheating.",
+  "examMeta": {
+    "terminatedDueToCheating": false,
+    "terminationRemark": "",
+    "cheatingAttempts": 1,
+    "totalOptionChanges": 4,
+    "questionInteractions": [
+      {
+        "questionId": "mongo_question_id",
+        "firstSelectedOptionIndex": 2,
+        "finalSelectedOptionIndex": 1,
+        "changeCount": 1,
+        "selectionHistory": [2, 1]
+      }
+    ]
+  }
 }
 ```
 

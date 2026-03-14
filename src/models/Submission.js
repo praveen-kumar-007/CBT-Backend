@@ -35,6 +35,59 @@ const answerSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const interactionSchema = new mongoose.Schema(
+  {
+    question: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Question',
+      required: true
+    },
+    firstSelectedOptionIndex: {
+      type: Number,
+      default: null
+    },
+    finalSelectedOptionIndex: {
+      type: Number,
+      default: null
+    },
+    changeCount: {
+      type: Number,
+      default: 0
+    },
+    selectionHistory: {
+      type: [Number],
+      default: []
+    }
+  },
+  { _id: false }
+);
+
+const examMetaSchema = new mongoose.Schema(
+  {
+    terminatedDueToCheating: {
+      type: Boolean,
+      default: false
+    },
+    terminationRemark: {
+      type: String,
+      default: ''
+    },
+    cheatingAttempts: {
+      type: Number,
+      default: 0
+    },
+    totalOptionChanges: {
+      type: Number,
+      default: 0
+    },
+    questionInteractions: {
+      type: [interactionSchema],
+      default: []
+    }
+  },
+  { _id: false }
+);
+
 const submissionSchema = new mongoose.Schema(
   {
     student: {
@@ -68,6 +121,14 @@ const submissionSchema = new mongoose.Schema(
     maxScore: {
       type: Number,
       required: true
+    },
+    remark: {
+      type: String,
+      default: ''
+    },
+    examMeta: {
+      type: examMetaSchema,
+      default: () => ({})
     }
   },
   {

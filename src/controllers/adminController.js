@@ -287,12 +287,32 @@ const getAnalytics = async (req, res, next) => {
           _id: null,
           avgScore: { $avg: '$score' },
           avgMaxScore: { $avg: '$maxScore' },
-          bestScore: { $max: '$score' }
+          bestScore: { $max: '$score' },
+          cheatingTerminations: {
+            $sum: {
+              $cond: [
+                { $eq: ['$examMeta.terminatedDueToCheating', true] },
+                1,
+                0
+              ]
+            }
+          },
+          totalCheatingAttempts: { $sum: { $ifNull: ['$examMeta.cheatingAttempts', 0] } },
+          totalOptionChanges: { $sum: { $ifNull: ['$examMeta.totalOptionChanges', 0] } },
+          avgOptionChanges: { $avg: { $ifNull: ['$examMeta.totalOptionChanges', 0] } }
         }
       }
     ]);
 
-    const scoreInfo = aggregate[0] || { avgScore: 0, avgMaxScore: 0, bestScore: 0 };
+    const scoreInfo = aggregate[0] || {
+      avgScore: 0,
+      avgMaxScore: 0,
+      bestScore: 0,
+      cheatingTerminations: 0,
+      totalCheatingAttempts: 0,
+      totalOptionChanges: 0,
+      avgOptionChanges: 0
+    };
     const averagePercent = scoreInfo.avgMaxScore > 0
       ? Number(((scoreInfo.avgScore / scoreInfo.avgMaxScore) * 100).toFixed(2))
       : 0;
@@ -305,7 +325,11 @@ const getAnalytics = async (req, res, next) => {
         questionsCount,
         submissionsCount,
         averagePercent,
-        bestScore: scoreInfo.bestScore || 0
+        bestScore: scoreInfo.bestScore || 0,
+        cheatingTerminations: scoreInfo.cheatingTerminations || 0,
+        totalCheatingAttempts: scoreInfo.totalCheatingAttempts || 0,
+        totalOptionChanges: scoreInfo.totalOptionChanges || 0,
+        avgOptionChanges: Number((scoreInfo.avgOptionChanges || 0).toFixed(2))
       }
     });
   } catch (error) {
@@ -322,6 +346,179 @@ const getRecentSubmissions = async (req, res, next) => {
       .limit(10);
 
     return res.status(200).json({ success: true, data: recent });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const getInsights = async (req, res, next) => {
+  try {
+    const scoreDistributionAgg = await Submission.aggregate([
+      {
+        $project: {
+          percent: {
+            $cond: [
+              { $gt: ['$maxScore', 0] },
+              { $multiply: [{ $divide: ['$score', '$maxScore'] }, 100] },
+              0
+            ]
+          }
+        }
+      },
+      {
+        $project: {
+          bucket: {
+            $switch: {
+              branches: [
+                { case: { $lt: ['$percent', 40] }, then: '0-39' },
+                { case: { $lt: ['$percent', 60] }, then: '40-59' },
+                { case: { $lt: ['$percent', 75] }, then: '60-74' },
+                { case: { $lt: ['$percent', 90] }, then: '75-89' }
+              ],
+              default: '90-100'
+            }
+          }
+        }
+      },
+      { $group: { _id: '$bucket', count: { $sum: 1 } } }
+    ]);
+
+    const sectionPerformanceAgg = await Submission.aggregate([
+      {
+        $project: {
+          section: 1,
+          percent: {
+            $cond: [
+              { $gt: ['$maxScore', 0] },
+              { $multiply: [{ $divide: ['$score', '$maxScore'] }, 100] },
+              0
+            ]
+          }
+        }
+      },
+      {
+        $group: {
+          _id: '$section',
+          avgPercent: { $avg: '$percent' },
+          attempts: { $sum: 1 }
+        }
+      },
+      {
+        $lookup: {
+          from: 'sections',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'sectionDoc'
+        }
+      },
+      { $unwind: { path: '$sectionDoc', preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          _id: 0,
+          sectionName: { $ifNull: ['$sectionDoc.name', 'Unknown Section'] },
+          avgPercent: { $round: ['$avgPercent', 2] },
+          attempts: 1
+        }
+      },
+      { $sort: { avgPercent: -1 } }
+    ]);
+
+    const topStudentsAgg = await Submission.aggregate([
+      {
+        $project: {
+          student: 1,
+          percent: {
+            $cond: [
+              { $gt: ['$maxScore', 0] },
+              { $multiply: [{ $divide: ['$score', '$maxScore'] }, 100] },
+              0
+            ]
+          }
+        }
+      },
+      {
+        $group: {
+          _id: '$student',
+          avgPercent: { $avg: '$percent' },
+          attempts: { $sum: 1 }
+        }
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'studentDoc'
+        }
+      },
+      { $unwind: { path: '$studentDoc', preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          _id: 0,
+          studentName: { $ifNull: ['$studentDoc.name', 'Unknown Student'] },
+          studentCredential: { $ifNull: ['$studentDoc.studentCredential', ''] },
+          avgPercent: { $round: ['$avgPercent', 2] },
+          attempts: 1
+        }
+      },
+      { $sort: { avgPercent: -1, attempts: -1 } },
+      { $limit: 10 }
+    ]);
+
+    const timelineAgg = await Submission.aggregate([
+      {
+        $project: {
+          day: {
+            $dateToString: {
+              format: '%Y-%m-%d',
+              date: '$createdAt'
+            }
+          },
+          cheatingAttempts: { $ifNull: ['$examMeta.cheatingAttempts', 0] },
+          optionChanges: { $ifNull: ['$examMeta.totalOptionChanges', 0] },
+          terminatedDueToCheating: { $ifNull: ['$examMeta.terminatedDueToCheating', false] }
+        }
+      },
+      {
+        $group: {
+          _id: '$day',
+          submissions: { $sum: 1 },
+          cheatingAttempts: { $sum: '$cheatingAttempts' },
+          optionChanges: { $sum: '$optionChanges' },
+          terminations: {
+            $sum: {
+              $cond: [{ $eq: ['$terminatedDueToCheating', true] }, 1, 0]
+            }
+          }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    const orderedScoreBuckets = ['0-39', '40-59', '60-74', '75-89', '90-100'];
+    const scoreMap = new Map(scoreDistributionAgg.map((item) => [item._id, item.count]));
+    const scoreDistribution = orderedScoreBuckets.map((bucket) => ({
+      bucket,
+      count: scoreMap.get(bucket) || 0
+    }));
+
+    const timeline = timelineAgg.slice(-14).map((item) => ({
+      day: item._id,
+      submissions: item.submissions,
+      cheatingAttempts: item.cheatingAttempts,
+      optionChanges: item.optionChanges,
+      terminations: item.terminations
+    }));
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        scoreDistribution,
+        sectionPerformance: sectionPerformanceAgg,
+        topStudents: topStudentsAgg,
+        timeline
+      }
+    });
   } catch (error) {
     return next(error);
   }
@@ -409,6 +606,10 @@ const exportStudentSubmissionsCsv = async (req, res, next) => {
       'max_score',
       'attempted_questions',
       'total_questions',
+      'terminated_due_to_cheating',
+      'termination_remark',
+      'cheating_attempts',
+      'option_changes',
       'submitted_at'
     ];
 
@@ -421,6 +622,10 @@ const exportStudentSubmissionsCsv = async (req, res, next) => {
       submission.maxScore,
       submission.attemptedQuestions,
       submission.totalQuestions,
+      submission.examMeta?.terminatedDueToCheating ? 'TRUE' : 'FALSE',
+      submission.examMeta?.terminationRemark || submission.remark || '',
+      submission.examMeta?.cheatingAttempts || 0,
+      submission.examMeta?.totalOptionChanges || 0,
       submission.createdAt.toISOString()
     ]);
 
@@ -451,6 +656,10 @@ const exportAllSubmissionsDetailedCsv = async (req, res, next) => {
       'max_score',
       'attempted_questions',
       'total_questions',
+      'terminated_due_to_cheating',
+      'termination_remark',
+      'cheating_attempts',
+      'option_changes',
       'submitted_at',
       'question_number',
       'question_text',
@@ -480,6 +689,10 @@ const exportAllSubmissionsDetailedCsv = async (req, res, next) => {
           submission.maxScore,
           submission.attemptedQuestions,
           submission.totalQuestions,
+          submission.examMeta?.terminatedDueToCheating ? 'TRUE' : 'FALSE',
+          submission.examMeta?.terminationRemark || submission.remark || '',
+          submission.examMeta?.cheatingAttempts || 0,
+          submission.examMeta?.totalOptionChanges || 0,
           submission.createdAt.toISOString(),
           '',
           '',
@@ -512,6 +725,10 @@ const exportAllSubmissionsDetailedCsv = async (req, res, next) => {
           submission.maxScore,
           submission.attemptedQuestions,
           submission.totalQuestions,
+          submission.examMeta?.terminatedDueToCheating ? 'TRUE' : 'FALSE',
+          submission.examMeta?.terminationRemark || submission.remark || '',
+          submission.examMeta?.cheatingAttempts || 0,
+          submission.examMeta?.totalOptionChanges || 0,
           submission.createdAt.toISOString(),
           index + 1,
           answer.questionText,
@@ -605,6 +822,7 @@ module.exports = {
   deleteStudent,
   resetAllStudentsData,
   getAnalytics,
+  getInsights,
   getRecentSubmissions,
   exportStudentSubmissionsCsv,
   exportAllSubmissionsDetailedCsv,

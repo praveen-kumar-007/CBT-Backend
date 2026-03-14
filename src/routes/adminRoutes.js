@@ -15,6 +15,7 @@ const {
   deleteStudent,
   resetAllStudentsData,
   getAnalytics,
+  getInsights,
   getRecentSubmissions,
   exportStudentSubmissionsCsv,
   exportAllSubmissionsDetailedCsv,
@@ -23,15 +24,21 @@ const {
 } = require('../controllers/adminController');
 const { protect, allowRoles } = require('../middlewares/authMiddleware');
 const validateRequest = require('../middlewares/validateRequest');
+const {
+  adminAnalyticsAuditLogger,
+  adminAnalyticsRateLimit,
+  adminExportRateLimit
+} = require('../middlewares/adminSecurityMiddleware');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
 
 router.use(protect, allowRoles('admin'));
 
-router.get('/analytics', getAnalytics);
-router.get('/submissions/recent', getRecentSubmissions);
-router.get('/submissions/export/detailed', exportAllSubmissionsDetailedCsv);
+router.get('/analytics', adminAnalyticsAuditLogger, adminAnalyticsRateLimit, getAnalytics);
+router.get('/insights', adminAnalyticsAuditLogger, adminAnalyticsRateLimit, getInsights);
+router.get('/submissions/recent', adminAnalyticsAuditLogger, adminAnalyticsRateLimit, getRecentSubmissions);
+router.get('/submissions/export/detailed', adminAnalyticsAuditLogger, adminExportRateLimit, exportAllSubmissionsDetailedCsv);
 router.get('/exam-config', getExamConfig);
 
 router.put(
@@ -135,6 +142,8 @@ router.get(
 
 router.get(
   '/students/:studentId/submissions/export',
+  adminAnalyticsAuditLogger,
+  adminExportRateLimit,
   [param('studentId').isMongoId().withMessage('Valid student id is required.'), validateRequest],
   exportStudentSubmissionsCsv
 );
