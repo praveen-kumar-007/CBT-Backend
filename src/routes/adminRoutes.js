@@ -13,9 +13,11 @@ const {
   getAllStudents,
   getStudentSubmissions,
   deleteStudent,
+  resetAllStudentsData,
   getAnalytics,
   getRecentSubmissions,
   exportStudentSubmissionsCsv,
+  exportAllSubmissionsDetailedCsv,
   getExamConfig,
   updateExamConfig
 } = require('../controllers/adminController');
@@ -29,6 +31,7 @@ router.use(protect, allowRoles('admin'));
 
 router.get('/analytics', getAnalytics);
 router.get('/submissions/recent', getRecentSubmissions);
+router.get('/submissions/export/detailed', exportAllSubmissionsDetailedCsv);
 router.get('/exam-config', getExamConfig);
 
 router.put(
@@ -37,6 +40,11 @@ router.put(
     body('durationInMinutes')
       .isInt({ min: 1, max: 600 })
       .withMessage('durationInMinutes must be between 1 and 600.'),
+    body('examinerName')
+      .optional()
+      .isString()
+      .isLength({ min: 2, max: 120 })
+      .withMessage('examinerName must be 2 to 120 characters.'),
     validateRequest
   ],
   updateExamConfig
@@ -116,6 +124,8 @@ router.delete(
 );
 
 router.get('/students', getAllStudents);
+
+router.delete('/students/reset-all', resetAllStudentsData);
 
 router.get(
   '/students/:studentId/submissions',

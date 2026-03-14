@@ -1,65 +1,113 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
+
+<head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CBT Admin Login</title>
     <style>
-      body { font-family: Segoe UI, sans-serif; background: #eef4ff; margin: 0; padding: 2rem; }
-      .card { max-width: 420px; margin: 2rem auto; background: #fff; padding: 1.25rem; border-radius: 12px; box-shadow: 0 10px 30px rgba(13,43,107,.12); }
-      h1 { margin-top: 0; color: #0f2a5f; }
-      label { display: block; margin-top: .7rem; color: #2a3552; font-weight: 600; }
-      input, button { width: 100%; padding: .7rem; margin-top: .35rem; border-radius: 8px; border: 1px solid #c7d2ef; }
-      button { background: #1649b7; color: #fff; border: none; margin-top: 1rem; font-weight: 600; cursor: pointer; }
-      #result { margin-top: 1rem; font-size: .9rem; color: #113a8d; white-space: pre-wrap; }
+        body {
+            font-family: Segoe UI, sans-serif;
+            background: #eef4ff;
+            margin: 0;
+            padding: 2rem;
+        }
+
+        .card {
+            max-width: 420px;
+            margin: 2rem auto;
+            background: #fff;
+            padding: 1.25rem;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(13, 43, 107, .12);
+        }
+
+        h1 {
+            margin-top: 0;
+            color: #0f2a5f;
+        }
+
+        label {
+            display: block;
+            margin-top: .7rem;
+            color: #2a3552;
+            font-weight: 600;
+        }
+
+        input,
+        button {
+            width: 100%;
+            padding: .7rem;
+            margin-top: .35rem;
+            border-radius: 8px;
+            border: 1px solid #c7d2ef;
+        }
+
+        button {
+            background: #1649b7;
+            color: #fff;
+            border: none;
+            margin-top: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        #result {
+            margin-top: 1rem;
+            font-size: .9rem;
+            color: #113a8d;
+            white-space: pre-wrap;
+        }
     </style>
-  </head>
-  <body>
+</head>
+
+<body>
     <div class="card">
-      <h1>Admin Login</h1>
-      <form id="loginForm">
-        <label for="email">Email</label>
-        <input id="email" type="email" required />
-        <label for="password">Password</label>
-        <input id="password" type="password" minlength="6" required />
-        <button type="submit">Login</button>
-      </form>
-      <div id="result"></div>
+        <h1>Admin Login</h1>
+        <form id="loginForm">
+            <label for="email">Email</label>
+            <input id="email" type="email" required />
+            <label for="password">Password</label>
+            <input id="password" type="password" minlength="6" required />
+            <button type="submit">Login</button>
+        </form>
+        <div id="result"></div>
     </div>
 
     <script>
-      const form = document.getElementById('loginForm');
-      const result = document.getElementById('result');
+        const form = document.getElementById('loginForm');
+        const result = document.getElementById('result');
 
-      form.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        result.textContent = 'Please wait...';
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            result.textContent = 'Please wait...';
 
-        try {
-          const response = await fetch('/api/auth/admin/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              email: document.getElementById('email').value,
-              password: document.getElementById('password').value
-            })
-          });
+            try {
+                const response = await fetch('/api/auth/admin/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: document.getElementById('email').value,
+                        password: document.getElementById('password').value
+                    })
+                });
 
-          const data = await response.json();
-          if (!response.ok || data.success === false) {
-            throw new Error(data.message || 'Login failed');
-          }
+                const data = await response.json();
+                if (!response.ok || data.success === false) {
+                    throw new Error(data.message || 'Login failed');
+                }
 
-          localStorage.setItem('adminToken', data.data.token);
-          localStorage.setItem('adminUser', JSON.stringify(data.data.user));
-          result.textContent = 'Login successful. Redirecting to dashboard...';
-          setTimeout(() => {
-            window.location.href = '/admin/dashboard';
-          }, 500);
-        } catch (error) {
-          result.textContent = error.message;
-        }
-      });
+                localStorage.setItem('adminToken', data.data.token);
+                localStorage.setItem('adminUser', JSON.stringify(data.data.user));
+                result.textContent = 'Login successful. Redirecting to dashboard...';
+                setTimeout(() => {
+                    window.location.href = '/admin/dashboard';
+                }, 500);
+            } catch (error) {
+                result.textContent = error.message;
+            }
+        });
     </script>
-  </body>
+</body>
+
 </html>

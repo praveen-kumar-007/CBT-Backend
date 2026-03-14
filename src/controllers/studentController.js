@@ -259,7 +259,8 @@ const getExamConfigForStudent = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       data: {
-        durationInMinutes: config?.durationInMinutes || 60
+        durationInMinutes: config?.durationInMinutes || 60,
+        examinerName: config?.examinerName || 'CBT Examination Cell'
       }
     });
   } catch (error) {

@@ -9,6 +9,11 @@ const examConfigSchema = new mongoose.Schema(
       max: 600,
       default: 60
     },
+    examinerName: {
+      type: String,
+      trim: true,
+      default: 'CBT Examination Cell'
+    },
     updatedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',

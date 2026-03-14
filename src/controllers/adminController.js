@@ -334,6 +334,7 @@ const getExamConfig = async (req, res, next) => {
     if (!config) {
       config = await ExamConfig.create({
         durationInMinutes: 60,
+        examinerName: req.user?.name || 'CBT Examination Cell',
         updatedBy: req.user._id
       });
     }
@@ -342,6 +343,7 @@ const getExamConfig = async (req, res, next) => {
       success: true,
       data: {
         durationInMinutes: config.durationInMinutes,
+        examinerName: config.examinerName || 'CBT Examination Cell',
         updatedAt: config.updatedAt
       }
     });
@@ -352,12 +354,15 @@ const getExamConfig = async (req, res, next) => {
 
 const updateExamConfig = async (req, res, next) => {
   try {
-    const { durationInMinutes } = req.body;
+    const { durationInMinutes, examinerName } = req.body;
 
     const config = await ExamConfig.findOneAndUpdate(
       {},
       {
         durationInMinutes,
+        examinerName: (typeof examinerName === 'string' && examinerName.trim())
+          ? examinerName.trim()
+          : 'CBT Examination Cell',
         updatedBy: req.user._id
       },
       {
@@ -373,6 +378,7 @@ const updateExamConfig = async (req, res, next) => {
       message: 'Exam duration updated successfully.',
       data: {
         durationInMinutes: config.durationInMinutes,
+        examinerName: config.examinerName || 'CBT Examination Cell',
         updatedAt: config.updatedAt
       }
     });
@@ -429,6 +435,107 @@ const exportStudentSubmissionsCsv = async (req, res, next) => {
   }
 };
 
+const exportAllSubmissionsDetailedCsv = async (req, res, next) => {
+  try {
+    const submissions = await Submission.find({})
+      .populate('student', 'name email studentCredential')
+      .populate('section', 'name')
+      .sort({ createdAt: -1 });
+
+    const header = [
+      'student_name',
+      'student_email',
+      'student_roll_number',
+      'section',
+      'score',
+      'max_score',
+      'attempted_questions',
+      'total_questions',
+      'submitted_at',
+      'question_number',
+      'question_text',
+      'selected_option_index',
+      'selected_option_text',
+      'correct_option_index',
+      'correct_option_text',
+      'is_correct',
+      'marks_awarded'
+    ];
+
+    const rows = [];
+
+    for (const submission of submissions) {
+      const studentName = submission.student?.name || 'Unknown Student';
+      const studentEmail = submission.student?.email || '';
+      const studentRoll = submission.student?.studentCredential || '';
+      const sectionName = submission.section?.name || '';
+
+      if (!submission.answers?.length) {
+        rows.push([
+          studentName,
+          studentEmail,
+          studentRoll,
+          sectionName,
+          submission.score,
+          submission.maxScore,
+          submission.attemptedQuestions,
+          submission.totalQuestions,
+          submission.createdAt.toISOString(),
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          ''
+        ]);
+        continue;
+      }
+
+      submission.answers.forEach((answer, index) => {
+        const selectedIndex = answer.selectedOptionIndex;
+        const correctIndex = answer.correctOptionIndex;
+
+        const selectedText = (selectedIndex === null || selectedIndex === undefined)
+          ? 'Not answered'
+          : (answer.options?.[selectedIndex] || 'Invalid option');
+
+        const correctText = answer.options?.[correctIndex] || 'Invalid option';
+
+        rows.push([
+          studentName,
+          studentEmail,
+          studentRoll,
+          sectionName,
+          submission.score,
+          submission.maxScore,
+          submission.attemptedQuestions,
+          submission.totalQuestions,
+          submission.createdAt.toISOString(),
+          index + 1,
+          answer.questionText,
+          selectedIndex === null || selectedIndex === undefined ? '' : selectedIndex,
+          selectedText,
+          correctIndex,
+          correctText,
+          answer.isCorrect ? 'TRUE' : 'FALSE',
+          answer.marksAwarded
+        ]);
+      });
+    }
+
+    const csvEscape = (value) => `"${String(value).replace(/"/g, '""')}"`;
+    const csv = [header, ...rows].map((line) => line.map(csvEscape).join(',')).join('\n');
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="all-students-detailed-submissions.csv"');
+    return res.status(200).send(csv);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const deleteStudent = async (req, res, next) => {
   try {
     const { studentId } = req.params;
@@ -450,6 +557,40 @@ const deleteStudent = async (req, res, next) => {
   }
 };
 
+const resetAllStudentsData = async (req, res, next) => {
+  try {
+    const students = await User.find({ role: 'student' }).select('_id');
+    const studentIds = students.map((student) => student._id);
+
+    if (!studentIds.length) {
+      return res.status(200).json({
+        success: true,
+        message: 'No student data found to reset.',
+        data: {
+          deletedStudents: 0,
+          deletedSubmissions: 0
+        }
+      });
+    }
+
+    const [submissionResult, userResult] = await Promise.all([
+      Submission.deleteMany({ student: { $in: studentIds } }),
+      User.deleteMany({ _id: { $in: studentIds }, role: 'student' })
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: 'All student data reset successfully.',
+      data: {
+        deletedStudents: userResult.deletedCount || 0,
+        deletedSubmissions: submissionResult.deletedCount || 0
+      }
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   createSection,
   getSections,
@@ -462,9 +603,11 @@ module.exports = {
   getAllStudents,
   getStudentSubmissions,
   deleteStudent,
+  resetAllStudentsData,
   getAnalytics,
   getRecentSubmissions,
   exportStudentSubmissionsCsv,
+  exportAllSubmissionsDetailedCsv,
   getExamConfig,
   updateExamConfig
 };
