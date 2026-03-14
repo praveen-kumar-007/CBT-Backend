@@ -12,10 +12,33 @@ const studentRoutes = require('./routes/studentRoutes');
 const { notFound, errorHandler } = require('./middlewares/errorMiddleware');
 
 const app = express();
-const allowedOrigins = (process.env.CLIENT_URL || '')
+const configuredOrigins = (process.env.CLIENT_URL || '')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
+
+const defaultOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'https://examindo.vercel.app'
+];
+
+const allowedOrigins = [...new Set([...configuredOrigins, ...defaultOrigins])];
+const allowVercelPreview = configuredOrigins.includes('https://*.vercel.app');
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+
+  if (allowedOrigins.includes(origin)) {
+    return true;
+  }
+
+  if (allowVercelPreview && /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin)) {
+    return true;
+  }
+
+  return false;
+};
 
 const adminFrontendBase = process.env.FRONTEND_ADMIN_URL || allowedOrigins[0] || 'http://localhost:3000';
 
@@ -24,11 +47,7 @@ app.use(compression());
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin) {
-        return callback(null, true);
-      }
-
-      if (!allowedOrigins.length || allowedOrigins.includes(origin)) {
+      if (isAllowedOrigin(origin)) {
         return callback(null, true);
       }
 

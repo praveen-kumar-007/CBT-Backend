@@ -131,7 +131,8 @@ Backend shortcut routes:
 
 - Set all environment variables in your hosting platform.
 - For production CORS, set `CLIENT_URL` as comma-separated frontend origins.
-- Example: `CLIENT_URL=https://your-frontend.com,https://www.your-frontend.com`
+- Example: `CLIENT_URL=https://examindo.vercel.app,https://www.your-frontend.com`
+- Optional for Vercel previews: include `https://*.vercel.app` in `CLIENT_URL`.
 - Set `FRONTEND_ADMIN_URL` to your frontend base URL for admin redirects.
 - Ensure MongoDB Atlas IP allow-list includes your deployment provider.
 - Ensure Cloudinary credentials are valid if using question image upload.
