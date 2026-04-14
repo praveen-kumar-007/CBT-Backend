@@ -41,11 +41,14 @@ const serializeUser = (user) => ({
   tenantAdmin: user.tenantAdmin || null,
   tenantKey: user.tenantKey || null,
   studentCredential: user.studentCredential || null,
+  phone: user.phone || null,
+  plan: user.plan || "Enterprise Business",
+  studentLimit: user.studentLimit || 0,
 });
 
 const registerSuperAdmin = async (req, res, next) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, phone } = req.body;
 
     const existingSuperAdmins = await User.countDocuments({
       role: "super_admin",
@@ -72,6 +75,7 @@ const registerSuperAdmin = async (req, res, next) => {
       name,
       email,
       password,
+      phone,
       role: "super_admin",
     });
 
@@ -128,7 +132,7 @@ const loginSuperAdmin = async (req, res, next) => {
 
 const registerAdmin = async (req, res, next) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, phone } = req.body;
 
     const existingAdmins = await User.countDocuments({ role: "admin" });
     if (existingAdmins > 0) {
@@ -155,6 +159,7 @@ const registerAdmin = async (req, res, next) => {
       name,
       email,
       password,
+      phone,
       role: "admin",
       tenantKey,
     });
@@ -228,13 +233,23 @@ const registerStudent = async (req, res, next) => {
         .json({ success: false, message: "organizationCode is required." });
     }
 
-    const tenantAdmin = await User.findOne({ role: "admin", tenantKey }).select(
-      "_id",
-    );
+    const tenantAdmin = await User.findOne({ role: "admin", tenantKey });
     if (!tenantAdmin) {
       return res
         .status(404)
         .json({ success: false, message: "Invalid organization code." });
+    }
+
+    // Enforce Student Limit
+    const currentCount = await User.countDocuments({
+      role: "student",
+      tenantAdmin: tenantAdmin._id,
+    });
+    if (currentCount >= (tenantAdmin.studentLimit || 0)) {
+      return res.status(403).json({
+        success: false,
+        message: `Student seat limit reached (${tenantAdmin.studentLimit || 0}). Contact your administrator for more seats.`,
+      });
     }
 
     const existing = await User.findOne({
@@ -359,9 +374,7 @@ const createStudentSession = async (req, res, next) => {
         .json({ success: false, message: "organizationCode is required." });
     }
 
-    const tenantAdmin = await User.findOne({ role: "admin", tenantKey }).select(
-      "_id",
-    );
+    const tenantAdmin = await User.findOne({ role: "admin", tenantKey });
     if (!tenantAdmin) {
       return res
         .status(404)
@@ -375,6 +388,18 @@ const createStudentSession = async (req, res, next) => {
     });
 
     if (!student) {
+      // Enforce Student Limit for session-based auto-creation
+      const currentCount = await User.countDocuments({
+        role: "student",
+        tenantAdmin: tenantAdmin._id,
+      });
+      if (currentCount >= (tenantAdmin.studentLimit || 0)) {
+        return res.status(403).json({
+          success: false,
+          message: `Student seat limit reached (${tenantAdmin.studentLimit || 0}). Contact your administrator for more seats.`,
+        });
+      }
+
       const safeId = normalizedLoginId
         .toLowerCase()
         .replace(/\s+/g, ".")

@@ -43,6 +43,7 @@ const upload = multer({
 router.use(protect, allowRoles("admin", "super_admin"));
 
 router.get("/managed-admins", getManagedAdmins);
+router.delete("/managed-admins/:adminId", deleteManagedAdmin);
 
 router.post(
   "/managed-admins",
@@ -62,6 +63,7 @@ router.post(
       .isString()
       .isLength({ min: 3, max: 40 })
       .withMessage("tenantKey must be 3 to 40 characters."),
+    body("phone").optional().isString().trim(),
     validateRequest,
   ],
   createManagedAdmin,
@@ -75,6 +77,7 @@ router.post(
     body("password")
       .isLength({ min: 6 })
       .withMessage("Password must be at least 6 characters."),
+    body("phone").optional().isString().trim(),
     validateRequest,
   ],
   createAdditionalSuperAdmin,

@@ -48,6 +48,20 @@ const userSchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    phone: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    plan: {
+      type: String,
+      trim: true,
+      default: "Enterprise Business",
+    },
+    studentLimit: {
+      type: Number,
+      default: 0,
+    },
   },
   {
     timestamps: true,
