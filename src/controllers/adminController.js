@@ -241,12 +241,12 @@ const updateQuestion = async (req, res, next) => {
       question.options = options;
     }
 
-    if (typeof correctOptionIndex === "number") {
-      question.correctOptionIndex = correctOptionIndex;
+    if (correctOptionIndex !== undefined) {
+      question.correctOptionIndex = Number(correctOptionIndex);
     }
 
-    if (typeof marks === "number") {
-      question.marks = marks;
+    if (marks !== undefined) {
+      question.marks = Number(marks);
     }
 
     if (req.file) {
