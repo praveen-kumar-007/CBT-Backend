@@ -1,76 +1,85 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const servedQuestionSchema = new mongoose.Schema(
   {
     question: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Question',
-      required: true
+      ref: "Question",
+      required: true,
     },
     questionText: {
       type: String,
-      required: true
+      required: true,
     },
     originalOptions: {
       type: [String],
-      required: true
+      required: true,
     },
     shuffledOptions: {
       type: [String],
-      required: true
+      required: true,
     },
     optionOrder: {
       type: [Number],
-      required: true
+      required: true,
     },
     correctOptionIndex: {
       type: Number,
-      required: true
+      required: true,
     },
     marks: {
       type: Number,
-      required: true
+      required: true,
     },
     imageUrl: {
       type: String,
-      default: null
-    }
+      default: null,
+    },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const examSessionSchema = new mongoose.Schema(
   {
+    tenantAdmin: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
     student: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
-      index: true
+      index: true,
     },
     section: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Section',
+      ref: "Section",
       required: true,
-      index: true
+      index: true,
     },
     servedQuestions: {
       type: [servedQuestionSchema],
-      default: []
+      default: [],
     },
     isSubmitted: {
       type: Boolean,
-      default: false
+      default: false,
     },
     submittedAt: {
       type: Date,
-      default: null
-    }
+      default: null,
+    },
   },
   {
-    timestamps: true
-  }
+    timestamps: true,
+  },
 );
 
-examSessionSchema.index({ student: 1, section: 1 }, { unique: true });
+examSessionSchema.index(
+  { tenantAdmin: 1, student: 1, section: 1 },
+  { unique: true },
+);
 
-module.exports = mongoose.model('ExamSession', examSessionSchema);
+module.exports = mongoose.model("ExamSession", examSessionSchema);

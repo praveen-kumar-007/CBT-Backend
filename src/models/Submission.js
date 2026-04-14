@@ -1,139 +1,147 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const answerSchema = new mongoose.Schema(
   {
     question: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Question',
-      required: true
+      ref: "Question",
+      required: true,
     },
     questionText: {
       type: String,
-      required: true
+      required: true,
     },
     options: {
       type: [String],
-      required: true
+      required: true,
     },
     selectedOptionIndex: {
       type: Number,
-      default: null
+      default: null,
     },
     correctOptionIndex: {
       type: Number,
-      required: true
+      required: true,
     },
     isCorrect: {
       type: Boolean,
-      required: true
+      required: true,
     },
     marksAwarded: {
       type: Number,
-      required: true
-    }
+      required: true,
+    },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const interactionSchema = new mongoose.Schema(
   {
     question: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Question',
-      required: true
+      ref: "Question",
+      required: true,
     },
     firstSelectedOptionIndex: {
       type: Number,
-      default: null
+      default: null,
     },
     finalSelectedOptionIndex: {
       type: Number,
-      default: null
+      default: null,
     },
     changeCount: {
       type: Number,
-      default: 0
+      default: 0,
     },
     selectionHistory: {
       type: [Number],
-      default: []
-    }
+      default: [],
+    },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const examMetaSchema = new mongoose.Schema(
   {
     terminatedDueToCheating: {
       type: Boolean,
-      default: false
+      default: false,
     },
     terminationRemark: {
       type: String,
-      default: ''
+      default: "",
     },
     cheatingAttempts: {
       type: Number,
-      default: 0
+      default: 0,
     },
     totalOptionChanges: {
       type: Number,
-      default: 0
+      default: 0,
     },
     questionInteractions: {
       type: [interactionSchema],
-      default: []
-    }
+      default: [],
+    },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const submissionSchema = new mongoose.Schema(
   {
+    tenantAdmin: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
     student: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
-      index: true
+      index: true,
     },
     section: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Section',
+      ref: "Section",
       required: true,
-      index: true
+      index: true,
     },
     answers: {
       type: [answerSchema],
-      default: []
+      default: [],
     },
     totalQuestions: {
       type: Number,
-      required: true
+      required: true,
     },
     attemptedQuestions: {
       type: Number,
-      required: true
+      required: true,
     },
     score: {
       type: Number,
-      required: true
+      required: true,
     },
     maxScore: {
       type: Number,
-      required: true
+      required: true,
     },
     remark: {
       type: String,
-      default: ''
+      default: "",
     },
     examMeta: {
       type: examMetaSchema,
-      default: () => ({})
-    }
+      default: () => ({}),
+    },
   },
   {
-    timestamps: true
-  }
+    timestamps: true,
+  },
 );
 
-module.exports = mongoose.model('Submission', submissionSchema);
+submissionSchema.index({ tenantAdmin: 1, student: 1, createdAt: -1 });
+
+module.exports = mongoose.model("Submission", submissionSchema);

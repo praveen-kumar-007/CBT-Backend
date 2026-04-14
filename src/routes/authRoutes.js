@@ -1,66 +1,82 @@
-const express = require('express');
-const { body } = require('express-validator');
+const express = require("express");
+const { body } = require("express-validator");
 const {
-  registerAdmin,
+  loginSuperAdmin,
   loginAdmin,
-  registerStudent,
   loginStudent,
-  createStudentSession
-} = require('../controllers/authController');
-const validateRequest = require('../middlewares/validateRequest');
+  createStudentSession,
+} = require("../controllers/authController");
+const validateRequest = require("../middlewares/validateRequest");
 
 const router = express.Router();
 
-const commonEmailValidation = body('email').isEmail().withMessage('Valid email is required.');
-const commonPasswordValidation = body('password')
+const commonEmailValidation = body("email")
+  .isEmail()
+  .withMessage("Valid email is required.");
+const commonPasswordValidation = body("password")
   .isLength({ min: 6 })
-  .withMessage('Password must be at least 6 characters.');
+  .withMessage("Password must be at least 6 characters.");
 
 router.post(
-  '/admin/signup',
+  "/super-admin/login",
+  [commonEmailValidation, commonPasswordValidation, validateRequest],
+  loginSuperAdmin,
+);
+
+router.post(
+  "/admin/login",
+  [commonEmailValidation, commonPasswordValidation, validateRequest],
+  loginAdmin,
+);
+
+router.post(
+  "/student/login",
   [
-    body('name').notEmpty().withMessage('Admin name is required.'),
     commonEmailValidation,
     commonPasswordValidation,
-    validateRequest
+    body("organizationCode")
+      .optional()
+      .isString()
+      .withMessage("organizationCode must be a string."),
+    body("tenantKey")
+      .optional()
+      .isString()
+      .withMessage("tenantKey must be a string."),
+    body().custom((value) => {
+      const hasCode = Boolean(value?.organizationCode || value?.tenantKey);
+      if (!hasCode) {
+        throw new Error("organizationCode is required.");
+      }
+      return true;
+    }),
+    validateRequest,
   ],
-  registerAdmin
+  loginStudent,
 );
 
 router.post(
-  '/admin/login',
-  [commonEmailValidation, commonPasswordValidation, validateRequest],
-  loginAdmin
-);
-
-router.post(
-  '/student/signup',
+  "/student/session",
   [
-    body('name').notEmpty().withMessage('Student name is required.'),
-    commonEmailValidation,
-    commonPasswordValidation,
-    body('studentCredential')
-      .notEmpty()
-      .withMessage('Student credential (mobile/roll number) is required.'),
-    validateRequest
+    body("loginId").notEmpty().withMessage("Login ID is required."),
+    body("organizationCode")
+      .optional()
+      .isString()
+      .withMessage("organizationCode must be a string."),
+    body("tenantKey")
+      .optional()
+      .isString()
+      .withMessage("tenantKey must be a string."),
+    body().custom((value) => {
+      const hasCode = Boolean(value?.organizationCode || value?.tenantKey);
+      if (!hasCode) {
+        throw new Error("organizationCode is required.");
+      }
+      return true;
+    }),
+    body("password").notEmpty().withMessage("Password is required."),
+    validateRequest,
   ],
-  registerStudent
-);
-
-router.post(
-  '/student/login',
-  [commonEmailValidation, commonPasswordValidation, validateRequest],
-  loginStudent
-);
-
-router.post(
-  '/student/session',
-  [
-    body('loginId').notEmpty().withMessage('Login ID is required.'),
-    body('password').notEmpty().withMessage('Password is required.'),
-    validateRequest
-  ],
-  createStudentSession
+  createStudentSession,
 );
 
 module.exports = router;

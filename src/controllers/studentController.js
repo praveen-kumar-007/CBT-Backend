@@ -1,9 +1,10 @@
-const mongoose = require('mongoose');
-const Question = require('../models/Question');
-const Section = require('../models/Section');
-const Submission = require('../models/Submission');
-const ExamSession = require('../models/ExamSession');
-const ExamConfig = require('../models/ExamConfig');
+const mongoose = require("mongoose");
+const Question = require("../models/Question");
+const Section = require("../models/Section");
+const Submission = require("../models/Submission");
+const ExamSession = require("../models/ExamSession");
+const ExamConfig = require("../models/ExamConfig");
+const { getTenantAdminFromUser } = require("../utils/tenantContext");
 
 const shuffleArray = (arr) => {
   const copied = [...arr];
@@ -23,7 +24,11 @@ const toSafeInt = (value, min = 0) => {
 };
 
 const toOriginalOptionIndex = (servedQuestion, shuffledIndex) => {
-  if (!Number.isInteger(shuffledIndex) || shuffledIndex < 0 || shuffledIndex > 3) {
+  if (
+    !Number.isInteger(shuffledIndex) ||
+    shuffledIndex < 0 ||
+    shuffledIndex > 3
+  ) {
     return null;
   }
   const mapped = servedQuestion.optionOrder?.[shuffledIndex];
@@ -32,7 +37,10 @@ const toOriginalOptionIndex = (servedQuestion, shuffledIndex) => {
 
 const getSectionsForStudents = async (req, res, next) => {
   try {
-    const sections = await Section.find({ isActive: true }).sort({ createdAt: 1 });
+    const tenantAdmin = getTenantAdminFromUser(req.user);
+    const sections = await Section.find({ tenantAdmin, isActive: true }).sort({
+      createdAt: 1,
+    });
     return res.status(200).json({ success: true, data: sections });
   } catch (error) {
     return next(error);
@@ -41,27 +49,37 @@ const getSectionsForStudents = async (req, res, next) => {
 
 const getQuestionsForStudent = async (req, res, next) => {
   try {
+    const tenantAdmin = getTenantAdminFromUser(req.user);
     const { sectionId } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(sectionId)) {
-      return res.status(400).json({ success: false, message: 'Invalid section id.' });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid section id." });
     }
 
-    const section = await Section.findOne({ _id: sectionId, isActive: true });
+    const section = await Section.findOne({
+      _id: sectionId,
+      tenantAdmin,
+      isActive: true,
+    });
     if (!section) {
-      return res.status(404).json({ success: false, message: 'Section not found or inactive.' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Section not found or inactive." });
     }
 
     const existingSession = await ExamSession.findOne({
+      tenantAdmin,
       student: req.user._id,
-      section: sectionId
+      section: sectionId,
     });
 
     if (existingSession) {
       if (existingSession.isSubmitted) {
         return res.status(400).json({
           success: false,
-          message: 'You have already submitted this section.'
+          message: "You have already submitted this section.",
         });
       }
 
@@ -75,18 +93,26 @@ const getQuestionsForStudent = async (req, res, next) => {
             questionText: q.questionText,
             options: q.shuffledOptions,
             marks: q.marks,
-            imageUrl: q.imageUrl
-          }))
-        }
+            imageUrl: q.imageUrl,
+          })),
+        },
       });
     }
 
-    const questionDocs = await Question.find({ section: sectionId })
-      .select('questionText options marks imageUrl section correctOptionIndex')
+    const questionDocs = await Question.find({
+      tenantAdmin,
+      section: sectionId,
+    })
+      .select("questionText options marks imageUrl section correctOptionIndex")
       .lean();
 
     if (!questionDocs.length) {
-      return res.status(400).json({ success: false, message: 'No questions found for this section.' });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "No questions found for this section.",
+        });
     }
 
     const randomizedQuestionDocs = shuffleArray(questionDocs);
@@ -103,15 +129,16 @@ const getQuestionsForStudent = async (req, res, next) => {
         optionOrder,
         correctOptionIndex: q.correctOptionIndex,
         marks: q.marks,
-        imageUrl: q.imageUrl
+        imageUrl: q.imageUrl,
       };
     });
 
     const session = await ExamSession.create({
+      tenantAdmin,
       student: req.user._id,
       section: sectionId,
       servedQuestions,
-      isSubmitted: false
+      isSubmitted: false,
     });
 
     return res.status(200).json({
@@ -124,9 +151,9 @@ const getQuestionsForStudent = async (req, res, next) => {
           questionText: q.questionText,
           options: q.shuffledOptions,
           marks: q.marks,
-          imageUrl: q.imageUrl
-        }))
-      }
+          imageUrl: q.imageUrl,
+        })),
+      },
     });
   } catch (error) {
     return next(error);
@@ -135,66 +162,94 @@ const getQuestionsForStudent = async (req, res, next) => {
 
 const submitExam = async (req, res, next) => {
   try {
+    const tenantAdmin = getTenantAdminFromUser(req.user);
     const { sectionId, sessionId, answers, remark, examMeta } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(sectionId)) {
-      return res.status(400).json({ success: false, message: 'Invalid section id.' });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid section id." });
     }
 
     if (!mongoose.Types.ObjectId.isValid(sessionId)) {
-      return res.status(400).json({ success: false, message: 'Invalid session id.' });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid session id." });
     }
 
-    const section = await Section.findById(sectionId);
+    const section = await Section.findOne({ _id: sectionId, tenantAdmin });
     if (!section) {
-      return res.status(404).json({ success: false, message: 'Section not found.' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Section not found." });
     }
 
     const session = await ExamSession.findOne({
       _id: sessionId,
+      tenantAdmin,
       student: req.user._id,
-      section: sectionId
+      section: sectionId,
     });
 
     if (!session) {
-      return res.status(404).json({ success: false, message: 'Exam session not found for this student.' });
+      return res
+        .status(404)
+        .json({
+          success: false,
+          message: "Exam session not found for this student.",
+        });
     }
 
     if (session.isSubmitted) {
-      return res.status(400).json({ success: false, message: 'This section is already submitted.' });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "This section is already submitted.",
+        });
     }
 
     if (!session.servedQuestions.length) {
-      return res.status(400).json({ success: false, message: 'No questions found in exam session.' });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "No questions found in exam session.",
+        });
     }
 
     const providedAnswers = Array.isArray(answers) ? answers : [];
-    const servedQuestionIdSet = new Set(session.servedQuestions.map((q) => String(q.question)));
+    const servedQuestionIdSet = new Set(
+      session.servedQuestions.map((q) => String(q.question)),
+    );
     const answerMap = new Map();
 
     for (const item of providedAnswers) {
-      const questionId = String(item.questionId || '');
+      const questionId = String(item.questionId || "");
 
       if (!servedQuestionIdSet.has(questionId)) {
         return res.status(400).json({
           success: false,
-          message: `Invalid question id in submission: ${questionId}`
+          message: `Invalid question id in submission: ${questionId}`,
         });
       }
 
       if (answerMap.has(questionId)) {
         return res.status(400).json({
           success: false,
-          message: `Duplicate answer entry for question: ${questionId}`
+          message: `Duplicate answer entry for question: ${questionId}`,
         });
       }
 
-      if (item.selectedOptionIndex !== null && item.selectedOptionIndex !== undefined) {
+      if (
+        item.selectedOptionIndex !== null &&
+        item.selectedOptionIndex !== undefined
+      ) {
         const indexValue = Number(item.selectedOptionIndex);
         if (!Number.isInteger(indexValue) || indexValue < 0 || indexValue > 3) {
           return res.status(400).json({
             success: false,
-            message: `Invalid selected option index for question: ${questionId}`
+            message: `Invalid selected option index for question: ${questionId}`,
           });
         }
         answerMap.set(questionId, indexValue);
@@ -207,7 +262,9 @@ const submitExam = async (req, res, next) => {
     let score = 0;
     let maxScore = 0;
 
-    const servedQuestionMap = new Map(session.servedQuestions.map((q) => [String(q.question), q]));
+    const servedQuestionMap = new Map(
+      session.servedQuestions.map((q) => [String(q.question), q]),
+    );
 
     const normalizeQuestionInteractions = () => {
       const rawInteractions = Array.isArray(examMeta?.questionInteractions)
@@ -218,7 +275,7 @@ const submitExam = async (req, res, next) => {
       const seenQuestionIds = new Set();
 
       for (const interaction of rawInteractions) {
-        const questionId = String(interaction?.questionId || '');
+        const questionId = String(interaction?.questionId || "");
         if (!questionId || seenQuestionIds.has(questionId)) {
           continue;
         }
@@ -236,17 +293,29 @@ const submitExam = async (req, res, next) => {
           .map((idx) => toOriginalOptionIndex(servedQuestion, Number(idx)))
           .filter((idx) => idx !== null);
 
-        const firstMapped = toOriginalOptionIndex(servedQuestion, Number(interaction?.firstSelectedOptionIndex));
-        const finalMapped = toOriginalOptionIndex(servedQuestion, Number(interaction?.finalSelectedOptionIndex));
+        const firstMapped = toOriginalOptionIndex(
+          servedQuestion,
+          Number(interaction?.firstSelectedOptionIndex),
+        );
+        const finalMapped = toOriginalOptionIndex(
+          servedQuestion,
+          Number(interaction?.finalSelectedOptionIndex),
+        );
 
         normalized.push({
           question: servedQuestion.question,
-          firstSelectedOptionIndex: firstMapped !== null
-            ? firstMapped
-            : (selectionHistory.length ? selectionHistory[0] : null),
-          finalSelectedOptionIndex: finalMapped !== null
-            ? finalMapped
-            : (selectionHistory.length ? selectionHistory[selectionHistory.length - 1] : null),
+          firstSelectedOptionIndex:
+            firstMapped !== null
+              ? firstMapped
+              : selectionHistory.length
+                ? selectionHistory[0]
+                : null,
+          finalSelectedOptionIndex:
+            finalMapped !== null
+              ? finalMapped
+              : selectionHistory.length
+                ? selectionHistory[selectionHistory.length - 1]
+                : null,
           changeCount: toSafeInt(interaction?.changeCount, 0),
           selectionHistory,
         });
@@ -263,7 +332,8 @@ const submitExam = async (req, res, next) => {
         ? answerMap.get(questionId)
         : null;
 
-      const attempted = selectedShuffledIndex !== null && selectedShuffledIndex !== undefined;
+      const attempted =
+        selectedShuffledIndex !== null && selectedShuffledIndex !== undefined;
       if (attempted) {
         attemptedQuestions += 1;
       }
@@ -272,7 +342,9 @@ const submitExam = async (req, res, next) => {
         ? servedQuestion.optionOrder[selectedShuffledIndex]
         : null;
 
-      const isCorrect = attempted && originalSelectedOptionIndex === servedQuestion.correctOptionIndex;
+      const isCorrect =
+        attempted &&
+        originalSelectedOptionIndex === servedQuestion.correctOptionIndex;
       const marksAwarded = isCorrect ? servedQuestion.marks : 0;
       if (isCorrect) {
         score += servedQuestion.marks;
@@ -286,14 +358,15 @@ const submitExam = async (req, res, next) => {
         selectedOptionIndex: attempted ? originalSelectedOptionIndex : null,
         correctOptionIndex: servedQuestion.correctOptionIndex,
         isCorrect,
-        marksAwarded
+        marksAwarded,
       };
     });
 
-    const cleanedRemark = typeof remark === 'string' ? remark.trim() : '';
+    const cleanedRemark = typeof remark === "string" ? remark.trim() : "";
     const questionInteractions = normalizeQuestionInteractions();
 
     const submission = await Submission.create({
+      tenantAdmin,
       student: req.user._id,
       section: sectionId,
       answers: processedAnswers,
@@ -304,13 +377,14 @@ const submitExam = async (req, res, next) => {
       remark: cleanedRemark,
       examMeta: {
         terminatedDueToCheating: Boolean(examMeta?.terminatedDueToCheating),
-        terminationRemark: typeof examMeta?.terminationRemark === 'string'
-          ? examMeta.terminationRemark.trim()
-          : '',
+        terminationRemark:
+          typeof examMeta?.terminationRemark === "string"
+            ? examMeta.terminationRemark.trim()
+            : "",
         cheatingAttempts: toSafeInt(examMeta?.cheatingAttempts, 0),
         totalOptionChanges: toSafeInt(examMeta?.totalOptionChanges, 0),
         questionInteractions,
-      }
+      },
     });
 
     session.isSubmitted = true;
@@ -319,12 +393,12 @@ const submitExam = async (req, res, next) => {
 
     return res.status(201).json({
       success: true,
-      message: 'Exam submitted successfully. Score is available to admin only.',
+      message: "Exam submitted successfully. Score is available to admin only.",
       data: {
         submissionId: submission._id,
         totalQuestions: session.servedQuestions.length,
-        attemptedQuestions
-      }
+        attemptedQuestions,
+      },
     });
   } catch (error) {
     return next(error);
@@ -333,14 +407,15 @@ const submitExam = async (req, res, next) => {
 
 const getExamConfigForStudent = async (req, res, next) => {
   try {
-    const config = await ExamConfig.findOne({}).sort({ createdAt: -1 });
+    const tenantAdmin = getTenantAdminFromUser(req.user);
+    const config = await ExamConfig.findOne({ tenantAdmin });
 
     return res.status(200).json({
       success: true,
       data: {
         durationInMinutes: config?.durationInMinutes || 60,
-        examinerName: config?.examinerName || 'CBT Examination Cell'
-      }
+        examinerName: config?.examinerName || "CBT Examination Cell",
+      },
     });
   } catch (error) {
     return next(error);
@@ -351,5 +426,5 @@ module.exports = {
   getSectionsForStudents,
   getQuestionsForStudent,
   submitExam,
-  getExamConfigForStudent
+  getExamConfigForStudent,
 };
