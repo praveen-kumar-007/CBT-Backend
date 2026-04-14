@@ -21,6 +21,7 @@ const {
   exportAllSubmissionsDetailedCsv,
   getExamConfig,
   updateExamConfig,
+  forceEndExam,
   getManagedAdmins,
   createManagedAdmin,
   createAdditionalSuperAdmin,
@@ -116,10 +117,20 @@ router.put(
       .isString()
       .isLength({ min: 2, max: 120 })
       .withMessage("examinerName must be 2 to 120 characters."),
+    body("startAt")
+      .optional({ nullable: true })
+      .isISO8601()
+      .withMessage("startAt must be a valid ISO8601 datetime."),
+    body("autoSubmitAfterTime")
+      .optional()
+      .isBoolean()
+      .withMessage("autoSubmitAfterTime must be boolean."),
     validateRequest,
   ],
   updateExamConfig,
 );
+
+router.post('/exam-config/end', forceEndExam);
 
 router.post(
   "/sections",

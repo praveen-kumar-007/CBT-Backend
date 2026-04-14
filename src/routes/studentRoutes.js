@@ -4,7 +4,8 @@ const {
   getSectionsForStudents,
   getQuestionsForStudent,
   submitExam,
-  getExamConfigForStudent
+  getExamConfigForStudent,
+  saveExamProgress,
 } = require('../controllers/studentController');
 const { protect, allowRoles } = require('../middlewares/authMiddleware');
 const validateRequest = require('../middlewares/validateRequest');
@@ -16,6 +17,41 @@ router.use(protect, allowRoles('student'));
 router.get('/exam-config', getExamConfigForStudent);
 
 router.get('/sections', getSectionsForStudents);
+
+router.put(
+  '/sessions/:sessionId/progress',
+  [
+    param('sessionId').isMongoId().withMessage('Valid session id is required.'),
+    body('answers')
+      .isArray({ min: 1 })
+      .withMessage('Answers must be a non-empty array.'),
+    body('answers.*.questionId')
+      .isMongoId()
+      .withMessage('Valid question id is required.'),
+    body('answers.*.selectedOptionIndex')
+      .optional({ nullable: true })
+      .isInt({ min: 0, max: 3 })
+      .withMessage('selectedOptionIndex must be 0 to 3.'),
+    body('examMeta')
+      .optional()
+      .isObject()
+      .withMessage('examMeta must be an object.'),
+    body('examMeta.questionInteractions')
+      .optional()
+      .isArray()
+      .withMessage('examMeta.questionInteractions must be an array.'),
+    body('examMeta.totalOptionChanges')
+      .optional()
+      .isInt({ min: 0 })
+      .withMessage('examMeta.totalOptionChanges must be a non-negative integer.'),
+    body('examMeta.cheatingAttempts')
+      .optional()
+      .isInt({ min: 0 })
+      .withMessage('examMeta.cheatingAttempts must be a non-negative integer.'),
+    validateRequest,
+  ],
+  saveExamProgress,
+);
 
 router.get(
   '/questions/section/:sectionId',

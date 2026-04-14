@@ -69,6 +69,21 @@ const getQuestionsForStudent = async (req, res, next) => {
         .json({ success: false, message: "Section not found or inactive." });
     }
 
+    const config = await ExamConfig.findOne({ tenantAdmin });
+    const now = new Date();
+    if (config?.startAt && now < config.startAt) {
+      return res.status(403).json({
+        success: false,
+        message: `Exam access opens at ${config.startAt.toISOString()}. Please try again after the scheduled start time.`,
+      });
+    }
+    if (config?.forceEndedAt && now >= config.forceEndedAt) {
+      return res.status(403).json({
+        success: false,
+        message: "The scheduled exam period has ended. Contact your administrator for more information.",
+      });
+    }
+
     const existingSession = await ExamSession.findOne({
       tenantAdmin,
       student: req.user._id,
@@ -94,6 +109,13 @@ const getQuestionsForStudent = async (req, res, next) => {
             options: q.shuffledOptions,
             marks: q.marks,
             imageUrl: q.imageUrl,
+          })),
+          progressAnswers: (existingSession.progressAnswers || []).map((item) => ({
+            questionId: String(item.question),
+            selectedOptionIndex:
+              item.selectedOptionIndex !== undefined
+                ? item.selectedOptionIndex
+                : null,
           })),
         },
       });
@@ -152,6 +174,116 @@ const getQuestionsForStudent = async (req, res, next) => {
           options: q.shuffledOptions,
           marks: q.marks,
           imageUrl: q.imageUrl,
+        })),
+        progressAnswers: [],
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const saveExamProgress = async (req, res, next) => {
+  try {
+    const tenantAdmin = getTenantAdminFromUser(req.user);
+    const { sessionId } = req.params;
+    const { answers, examMeta } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(sessionId)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid session id." });
+    }
+
+    const session = await ExamSession.findOne({
+      _id: sessionId,
+      tenantAdmin,
+      student: req.user._id,
+      isSubmitted: false,
+    });
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: "Active exam session not found.",
+      });
+    }
+
+    const config = await ExamConfig.findOne({ tenantAdmin });
+    const now = new Date();
+    if (config?.startAt && now < config.startAt) {
+      return res.status(403).json({
+        success: false,
+        message: `Exam access opens at ${config.startAt.toISOString()}.`,
+      });
+    }
+    if (config?.forceEndedAt && now >= config.forceEndedAt) {
+      return res.status(403).json({
+        success: false,
+        message: "The exam has ended and progress can no longer be updated.",
+      });
+    }
+
+    const validQuestionIds = new Set(
+      session.servedQuestions.map((q) => String(q.question)),
+    );
+
+    const newProgressMap = new Map(
+      (session.progressAnswers || []).map((item) => [String(item.question), item]),
+    );
+
+    for (const item of answers) {
+      const questionId = String(item.questionId || "");
+      if (!validQuestionIds.has(questionId)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid question id in progress update: ${questionId}`,
+        });
+      }
+
+      if (item.selectedOptionIndex === null || item.selectedOptionIndex === undefined) {
+        newProgressMap.delete(questionId);
+      } else {
+        newProgressMap.set(questionId, {
+          question: questionId,
+          selectedOptionIndex: item.selectedOptionIndex,
+          lastUpdatedAt: new Date(),
+        });
+      }
+    }
+
+    session.progressAnswers = Array.from(newProgressMap.values());
+    session.progressMeta = {
+      terminatedDueToCheating:
+        Boolean(examMeta?.terminatedDueToCheating) ||
+        Boolean(session.progressMeta?.terminatedDueToCheating),
+      terminationRemark:
+        typeof examMeta?.terminationRemark === "string"
+          ? examMeta.terminationRemark
+          : session.progressMeta?.terminationRemark || "",
+      cheatingAttempts: Number.isInteger(examMeta?.cheatingAttempts)
+        ? examMeta.cheatingAttempts
+        : session.progressMeta?.cheatingAttempts || 0,
+      totalOptionChanges: Number.isInteger(examMeta?.totalOptionChanges)
+        ? examMeta.totalOptionChanges
+        : session.progressMeta?.totalOptionChanges || 0,
+      questionInteractions: Array.isArray(examMeta?.questionInteractions)
+        ? examMeta.questionInteractions
+        : session.progressMeta?.questionInteractions || [],
+    };
+
+    await session.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Exam progress saved successfully.",
+      data: {
+        progressAnswers: session.progressAnswers.map((item) => ({
+          questionId: String(item.question),
+          selectedOptionIndex:
+            item.selectedOptionIndex !== undefined
+              ? item.selectedOptionIndex
+              : null,
         })),
       },
     });
@@ -269,7 +401,9 @@ const submitExam = async (req, res, next) => {
     const normalizeQuestionInteractions = () => {
       const rawInteractions = Array.isArray(examMeta?.questionInteractions)
         ? examMeta.questionInteractions
-        : [];
+        : Array.isArray(session.progressMeta?.questionInteractions)
+          ? session.progressMeta.questionInteractions
+          : [];
 
       const normalized = [];
       const seenQuestionIds = new Set();
@@ -415,6 +549,12 @@ const getExamConfigForStudent = async (req, res, next) => {
       data: {
         durationInMinutes: config?.durationInMinutes || 60,
         examinerName: config?.examinerName || "CBT Examination Cell",
+        startAt: config?.startAt || null,
+        forceEndedAt: config?.forceEndedAt || null,
+        autoSubmitAfterTime:
+          typeof config?.autoSubmitAfterTime === 'boolean'
+            ? config.autoSubmitAfterTime
+            : true,
       },
     });
   } catch (error) {
@@ -425,6 +565,7 @@ const getExamConfigForStudent = async (req, res, next) => {
 module.exports = {
   getSectionsForStudents,
   getQuestionsForStudent,
+  saveExamProgress,
   submitExam,
   getExamConfigForStudent,
 };

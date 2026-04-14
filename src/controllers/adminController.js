@@ -429,20 +429,147 @@ const getAnalytics = async (req, res, next) => {
   }
 };
 
+
 const getRecentSubmissions = async (req, res, next) => {
   try {
     const tenantAdmin = resolveTenantForAdminRequest(req);
-    const recent = await Submission.find({ tenantAdmin })
-      .populate("student", "name email studentCredential")
-      .populate("section", "name")
-      .sort({ createdAt: -1 })
-      .limit(10);
 
-    return res.status(200).json({ success: true, data: recent });
+    const grouped = await Submission.aggregate([
+      { $match: { tenantAdmin: toTenantObjectId(tenantAdmin) } },
+      { $sort: { createdAt: -1 } },
+      {
+        $group: {
+          _id: "$student",
+          totalScore: { $sum: "$score" },
+          totalMaxScore: { $sum: "$maxScore" },
+          totalAttempted: { $sum: "$attemptedQuestions" },
+          totalQuestions: { $sum: "$totalQuestions" },
+          submissionsCount: { $sum: 1 },
+          lastSubmittedAt: { $max: "$createdAt" },
+          terminatedDueToCheating: { $max: { $ifNull: ["$examMeta.terminatedDueToCheating", false] } },
+          cheatingAttempts: { $max: { $ifNull: ["$examMeta.cheatingAttempts", 0] } },
+          totalOptionChanges: { $sum: { $ifNull: ["$examMeta.totalOptionChanges", 0] } },
+          sections: {
+            $push: {
+              section: "$section",
+              score: "$score",
+              maxScore: "$maxScore",
+              attemptedQuestions: "$attemptedQuestions",
+              totalQuestions: "$totalQuestions",
+              createdAt: "$createdAt",
+              terminatedDueToCheating: { $ifNull: ["$examMeta.terminatedDueToCheating", false] },
+            },
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "_id",
+          foreignField: "_id",
+          as: "studentDoc",
+        },
+      },
+      { $unwind: { path: "$studentDoc", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "sections",
+          localField: "sections.section",
+          foreignField: "_id",
+          as: "sectionDocs",
+        },
+      },
+      {
+        $addFields: {
+          sections: {
+            $map: {
+              input: "$sections",
+              as: "s",
+              in: {
+                name: {
+                  $let: {
+                    vars: {
+                      match: {
+                        $arrayElemAt: [
+                          {
+                            $filter: {
+                              input: "$sectionDocs",
+                              as: "sd",
+                              cond: { $eq: ["$$sd._id", "$$s.section"] },
+                            },
+                          },
+                          0,
+                        ],
+                      },
+                    },
+                    in: { $ifNull: ["$$match.name", "Unknown Section"] },
+                  },
+                },
+                score: "$$s.score",
+                maxScore: "$$s.maxScore",
+                attemptedQuestions: "$$s.attemptedQuestions",
+                totalQuestions: "$$s.totalQuestions",
+                createdAt: "$$s.createdAt",
+                terminatedDueToCheating: "$$s.terminatedDueToCheating",
+              },
+            },
+          },
+        },
+      },
+      { $sort: { lastSubmittedAt: -1 } },
+      { $limit: 20 },
+      {
+        $project: {
+          _id: 1,
+          student: {
+            _id: "$studentDoc._id",
+            name: { $ifNull: ["$studentDoc.name", "Unknown Student"] },
+            email: { $ifNull: ["$studentDoc.email", ""] },
+            studentCredential: { $ifNull: ["$studentDoc.studentCredential", ""] },
+          },
+          totalScore: 1,
+          totalMaxScore: 1,
+          totalAttempted: 1,
+          totalQuestions: 1,
+          submissionsCount: 1,
+          percent: {
+            $cond: [
+              { $gt: ["$totalMaxScore", 0] },
+              { $round: [{ $multiply: [{ $divide: ["$totalScore", "$totalMaxScore"] }, 100] }, 1] },
+              0,
+            ],
+          },
+          lastSubmittedAt: 1,
+          terminatedDueToCheating: 1,
+          cheatingAttempts: 1,
+          totalOptionChanges: 1,
+          sections: 1,
+        },
+      },
+    ]);
+
+    const result = grouped.map((entry) => ({
+      _id: String(entry._id),
+      student: entry.student || { name: "Unknown Student", email: "", studentCredential: "" },
+      totalScore: entry.totalScore || 0,
+      totalMaxScore: entry.totalMaxScore || 0,
+      totalAttempted: entry.totalAttempted || 0,
+      totalQuestions: entry.totalQuestions || 0,
+      submissionsCount: entry.submissionsCount || 0,
+      percent: entry.percent || 0,
+      lastSubmittedAt: entry.lastSubmittedAt,
+      terminatedDueToCheating: Boolean(entry.terminatedDueToCheating),
+      cheatingAttempts: entry.cheatingAttempts || 0,
+      totalOptionChanges: entry.totalOptionChanges || 0,
+      sections: Array.isArray(entry.sections) ? entry.sections : [],
+    }));
+
+    return res.status(200).json({ success: true, data: result });
   } catch (error) {
     return next(error);
   }
 };
+
 
 const getInsights = async (req, res, next) => {
   try {
@@ -630,6 +757,82 @@ const getInsights = async (req, res, next) => {
   }
 };
 
+const createSubmissionFromSession = async (session, remark, progressMeta = {}) => {
+  const answerMap = new Map(
+    (session.progressAnswers || []).map((item) => [String(item.question), item.selectedOptionIndex]),
+  );
+
+  let attemptedQuestions = 0;
+  let score = 0;
+  let maxScore = 0;
+
+  const answers = session.servedQuestions.map((servedQuestion) => {
+    const questionId = String(servedQuestion.question);
+    const selectedShuffledIndex = answerMap.has(questionId)
+      ? answerMap.get(questionId)
+      : null;
+
+    const attempted = selectedShuffledIndex !== null && selectedShuffledIndex !== undefined;
+    if (attempted) {
+      attemptedQuestions += 1;
+    }
+
+    const originalSelectedOptionIndex = attempted
+      ? servedQuestion.optionOrder[selectedShuffledIndex]
+      : null;
+
+    const isCorrect =
+      attempted &&
+      originalSelectedOptionIndex === servedQuestion.correctOptionIndex;
+
+    const marksAwarded = isCorrect ? servedQuestion.marks : 0;
+    if (isCorrect) {
+      score += servedQuestion.marks;
+    }
+    maxScore += servedQuestion.marks;
+
+    return {
+      question: servedQuestion.question,
+      questionText: servedQuestion.questionText,
+      options: servedQuestion.originalOptions,
+      selectedOptionIndex: originalSelectedOptionIndex,
+      correctOptionIndex: servedQuestion.correctOptionIndex,
+      isCorrect,
+      marksAwarded,
+    };
+  });
+
+  const submission = await Submission.create({
+    tenantAdmin: session.tenantAdmin,
+    student: session.student,
+    section: session.section,
+    answers,
+    totalQuestions: session.servedQuestions.length,
+    attemptedQuestions,
+    score,
+    maxScore,
+    remark,
+    examMeta: {
+      terminatedDueToCheating: Boolean(progressMeta.terminatedDueToCheating),
+      terminationRemark:
+        typeof progressMeta.terminationRemark === "string"
+          ? progressMeta.terminationRemark
+          : "",
+      cheatingAttempts: Number.isInteger(progressMeta.cheatingAttempts)
+        ? progressMeta.cheatingAttempts
+        : 0,
+      totalOptionChanges: Number.isInteger(progressMeta.totalOptionChanges)
+        ? progressMeta.totalOptionChanges
+        : 0,
+      questionInteractions: Array.isArray(progressMeta.questionInteractions)
+        ? progressMeta.questionInteractions
+        : [],
+    },
+  });
+
+  return submission;
+};
+
 const getExamConfig = async (req, res, next) => {
   try {
     const tenantAdmin = resolveTenantForAdminRequest(req);
@@ -640,6 +843,7 @@ const getExamConfig = async (req, res, next) => {
       config = await ExamConfig.create({
         tenantAdmin,
         durationInMinutes: 60,
+        autoSubmitAfterTime: true,
         examinerName: req.user?.name || "CBT Examination Cell",
         updatedBy: req.user._id,
       });
@@ -650,6 +854,9 @@ const getExamConfig = async (req, res, next) => {
       data: {
         durationInMinutes: config.durationInMinutes,
         examinerName: config.examinerName || "CBT Examination Cell",
+        startAt: config.startAt || null,
+        forceEndedAt: config.forceEndedAt || null,
+        autoSubmitAfterTime: config.autoSubmitAfterTime,
         updatedAt: config.updatedAt,
       },
     });
@@ -661,13 +868,26 @@ const getExamConfig = async (req, res, next) => {
 const updateExamConfig = async (req, res, next) => {
   try {
     const tenantAdmin = resolveTenantForAdminRequest(req);
-    const { durationInMinutes, examinerName } = req.body;
+    const { durationInMinutes, examinerName, startAt, autoSubmitAfterTime } = req.body;
+
+    let parsedStartAt = null;
+    if (startAt) {
+      parsedStartAt = new Date(startAt);
+      if (Number.isNaN(parsedStartAt.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: 'startAt must be a valid ISO date string',
+        });
+      }
+    }
 
     const config = await ExamConfig.findOneAndUpdate(
       { tenantAdmin },
       {
         tenantAdmin,
         durationInMinutes,
+        startAt: parsedStartAt,
+        autoSubmitAfterTime: typeof autoSubmitAfterTime === 'boolean' ? autoSubmitAfterTime : true,
         examinerName:
           typeof examinerName === "string" && examinerName.trim()
             ? examinerName.trim()
@@ -684,11 +904,70 @@ const updateExamConfig = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      message: "Exam duration updated successfully.",
+      message: "Exam configuration updated successfully.",
       data: {
         durationInMinutes: config.durationInMinutes,
         examinerName: config.examinerName || "CBT Examination Cell",
+        startAt: config.startAt || null,
+        forceEndedAt: config.forceEndedAt || null,
+        autoSubmitAfterTime: config.autoSubmitAfterTime,
         updatedAt: config.updatedAt,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const forceEndExam = async (req, res, next) => {
+  try {
+    const tenantAdmin = resolveTenantForAdminRequest(req);
+    const now = new Date();
+
+    const config = await ExamConfig.findOneAndUpdate(
+      { tenantAdmin },
+      {
+        forceEndedAt: now,
+        updatedBy: req.user._id,
+      },
+      {
+        upsert: true,
+        new: true,
+        runValidators: true,
+        setDefaultsOnInsert: true,
+      },
+    );
+
+    const activeSessions = await ExamSession.find({ tenantAdmin, isSubmitted: false });
+    let processedCount = 0;
+
+    for (const session of activeSessions) {
+      const hasAnyAnswer = (session.progressAnswers || []).some(
+        (item) => item.selectedOptionIndex !== null && item.selectedOptionIndex !== undefined,
+      );
+
+      session.isSubmitted = true;
+      session.submittedAt = now;
+
+      if (hasAnyAnswer) {
+        await createSubmissionFromSession(
+          session,
+          'Auto-submitted due to exam being ended by admin.',
+          session.progressMeta || {},
+        );
+        processedCount += 1;
+      }
+
+      await session.save();
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Exam was ended and active student sessions were finalized.',
+      data: {
+        forceEndedAt: config.forceEndedAt,
+        activeSessionCount: activeSessions.length,
+        processedSessionCount: processedCount,
       },
     });
   } catch (error) {
@@ -1105,6 +1384,7 @@ module.exports = {
   exportAllSubmissionsDetailedCsv,
   getExamConfig,
   updateExamConfig,
+  forceEndExam,
   getManagedAdmins,
   createManagedAdmin,
   createAdditionalSuperAdmin,

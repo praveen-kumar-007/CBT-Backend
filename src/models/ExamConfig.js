@@ -14,6 +14,18 @@ const examConfigSchema = new mongoose.Schema(
       max: 600,
       default: 60,
     },
+    startAt: {
+      type: Date,
+      default: null,
+    },
+    forceEndedAt: {
+      type: Date,
+      default: null,
+    },
+    autoSubmitAfterTime: {
+      type: Boolean,
+      default: true,
+    },
     examinerName: {
       type: String,
       trim: true,
