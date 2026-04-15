@@ -64,7 +64,7 @@ app.use(compression());
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (isAllowedOrigin(origin)) {
+      if (isOriginAllowed(origin)) {
         return callback(null, true);
       }
 
