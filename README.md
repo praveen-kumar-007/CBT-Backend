@@ -49,9 +49,6 @@ ADMIN_ANALYTICS_RATE_WINDOW_MS=60000
 ADMIN_ANALYTICS_RATE_MAX_REQUESTS=60
 ADMIN_EXPORT_RATE_WINDOW_MS=600000
 ADMIN_EXPORT_RATE_MAX_REQUESTS=10
-KEEP_ALIVE_ENABLED=true
-# Optional explicit ping URL (defaults to RENDER_EXTERNAL_URL + /api/health)
-KEEP_ALIVE_URL=https://your-backend-domain.onrender.com/api/health
 ```
 
 3. Run in development:
@@ -163,20 +160,3 @@ Backend shortcut routes:
 - Set `FRONTEND_ADMIN_URL` to your frontend base URL for admin redirects.
 - Ensure MongoDB Atlas IP allow-list includes your deployment provider.
 - Ensure Cloudinary credentials are valid if using question image upload.
-- Keep-alive ping runs every 10 minutes in production by default.
-- If needed, set `KEEP_ALIVE_ENABLED=false` to disable.
-- If `KEEP_ALIVE_URL` is not set, backend will use `RENDER_EXTERNAL_URL + /api/health`.
-
-### Prevent Render Sleep (External Wake Every 10 Minutes)
-
-To reliably wake a sleeping Render service, use the included GitHub Actions workflow:
-
-- File: `.github/workflows/render-keepalive.yml`
-- Schedule: every 10 minutes
-- Endpoint pinged: `/api/health`
-
-Set this repository secret in GitHub:
-
-- `RENDER_BACKEND_URL=https://your-service-name.onrender.com`
-
-This external ping can wake the service even after Render idles it.
