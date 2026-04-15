@@ -23,11 +23,12 @@ const {
   updateExamConfig,
   forceEndExam,
   getManagedAdmins,
+  seedDemoPaperContent,
   createManagedAdmin,
-  deleteManagedAdmin,
   createAdditionalSuperAdmin,
 } = require("../controllers/adminController");
 const { protect, allowRoles } = require("../middlewares/authMiddleware");
+const { attachDemoPaperTenant } = require("../middlewares/demoPaperMiddleware");
 const validateRequest = require("../middlewares/validateRequest");
 const {
   adminAnalyticsAuditLogger,
@@ -41,17 +42,11 @@ const upload = multer({
   limits: { fileSize: 2 * 1024 * 1024 },
 });
 
-router.use(protect, allowRoles("admin", "super_admin"));
+router.use(protect, attachDemoPaperTenant, allowRoles("admin", "super_admin"));
+
+router.post("/demo-paper/seed", seedDemoPaperContent);
 
 router.get("/managed-admins", getManagedAdmins);
-router.delete(
-  "/managed-admins/:adminId",
-  [
-    param("adminId").isMongoId().withMessage("Valid admin id is required."),
-    validateRequest,
-  ],
-  deleteManagedAdmin,
-);
 
 router.post(
   "/managed-admins",
@@ -71,7 +66,6 @@ router.post(
       .isString()
       .isLength({ min: 3, max: 40 })
       .withMessage("tenantKey must be 3 to 40 characters."),
-    body("phone").optional().isString().trim(),
     validateRequest,
   ],
   createManagedAdmin,
@@ -85,7 +79,6 @@ router.post(
     body("password")
       .isLength({ min: 6 })
       .withMessage("Password must be at least 6 characters."),
-    body("phone").optional().isString().trim(),
     validateRequest,
   ],
   createAdditionalSuperAdmin,

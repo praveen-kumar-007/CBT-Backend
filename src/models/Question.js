@@ -51,6 +51,11 @@ const questionSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    isDemo: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   {
     timestamps: true,

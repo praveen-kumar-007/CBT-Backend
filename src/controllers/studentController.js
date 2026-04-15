@@ -80,7 +80,8 @@ const getQuestionsForStudent = async (req, res, next) => {
     if (config?.forceEndedAt && now >= config.forceEndedAt) {
       return res.status(403).json({
         success: false,
-        message: "The scheduled exam period has ended. Contact your administrator for more information.",
+        message:
+          "The scheduled exam period has ended. Contact your administrator for more information.",
       });
     }
 
@@ -110,13 +111,15 @@ const getQuestionsForStudent = async (req, res, next) => {
             marks: q.marks,
             imageUrl: q.imageUrl,
           })),
-          progressAnswers: (existingSession.progressAnswers || []).map((item) => ({
-            questionId: String(item.question),
-            selectedOptionIndex:
-              item.selectedOptionIndex !== undefined
-                ? item.selectedOptionIndex
-                : null,
-          })),
+          progressAnswers: (existingSession.progressAnswers || []).map(
+            (item) => ({
+              questionId: String(item.question),
+              selectedOptionIndex:
+                item.selectedOptionIndex !== undefined
+                  ? item.selectedOptionIndex
+                  : null,
+            }),
+          ),
         },
       });
     }
@@ -129,12 +132,10 @@ const getQuestionsForStudent = async (req, res, next) => {
       .lean();
 
     if (!questionDocs.length) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "No questions found for this section.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "No questions found for this section.",
+      });
     }
 
     const randomizedQuestionDocs = shuffleArray(questionDocs);
@@ -229,7 +230,10 @@ const saveExamProgress = async (req, res, next) => {
     );
 
     const newProgressMap = new Map(
-      (session.progressAnswers || []).map((item) => [String(item.question), item]),
+      (session.progressAnswers || []).map((item) => [
+        String(item.question),
+        item,
+      ]),
     );
 
     for (const item of answers) {
@@ -241,7 +245,10 @@ const saveExamProgress = async (req, res, next) => {
         });
       }
 
-      if (item.selectedOptionIndex === null || item.selectedOptionIndex === undefined) {
+      if (
+        item.selectedOptionIndex === null ||
+        item.selectedOptionIndex === undefined
+      ) {
         newProgressMap.delete(questionId);
       } else {
         newProgressMap.set(questionId, {
@@ -324,30 +331,24 @@ const submitExam = async (req, res, next) => {
     });
 
     if (!session) {
-      return res
-        .status(404)
-        .json({
-          success: false,
-          message: "Exam session not found for this student.",
-        });
+      return res.status(404).json({
+        success: false,
+        message: "Exam session not found for this student.",
+      });
     }
 
     if (session.isSubmitted) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "This section is already submitted.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "This section is already submitted.",
+      });
     }
 
     if (!session.servedQuestions.length) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "No questions found in exam session.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "No questions found in exam session.",
+      });
     }
 
     const providedAnswers = Array.isArray(answers) ? answers : [];
@@ -552,7 +553,7 @@ const getExamConfigForStudent = async (req, res, next) => {
         startAt: config?.startAt || null,
         forceEndedAt: config?.forceEndedAt || null,
         autoSubmitAfterTime:
-          typeof config?.autoSubmitAfterTime === 'boolean'
+          typeof config?.autoSubmitAfterTime === "boolean"
             ? config.autoSubmitAfterTime
             : true,
       },

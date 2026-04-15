@@ -29,6 +29,27 @@ const resolveTenantForAdminRequest = (req, { required = true } = {}) => {
     return null;
   }
 
+  const demoHeader =
+    req.headers["x-demo-paper"] === "1" ||
+    req.headers["x-demo-paper"] === "true";
+  if (demoHeader) {
+    if (req.demoPaperMissing) {
+      const error = new Error(
+        "Demo paper is not configured. Run the demo seed script on the server.",
+      );
+      error.statusCode = 503;
+      throw error;
+    }
+    if (req.demoPaperTenantId) {
+      return req.demoPaperTenantId;
+    }
+    const error = new Error(
+      "Demo paper context could not be resolved. Try again or contact support.",
+    );
+    error.statusCode = 503;
+    throw error;
+  }
+
   const headerValue =
     req.headers["x-organization-admin-id"] || req.headers["x-tenant-admin-id"];
   const queryValue = req.query.organizationAdminId || req.query.tenantAdminId;

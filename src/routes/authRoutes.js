@@ -5,6 +5,7 @@ const {
   loginAdmin,
   loginStudent,
   createStudentSession,
+  createDemoGuestSession,
 } = require("../controllers/authController");
 const validateRequest = require("../middlewares/validateRequest");
 
@@ -53,6 +54,8 @@ router.post(
   ],
   loginStudent,
 );
+
+router.post("/student/demo-session", createDemoGuestSession);
 
 router.post(
   "/student/session",

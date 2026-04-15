@@ -1,5 +1,7 @@
 const User = require("../models/User");
+const ExamSession = require("../models/ExamSession");
 const generateToken = require("../utils/generateToken");
+const { seedDemoPaper } = require("../utils/demoSeed");
 
 const normalizeTenantKey = (value) =>
   String(value || "")
@@ -432,6 +434,64 @@ const createStudentSession = async (req, res, next) => {
   }
 };
 
+/**
+ * One-click demo exam: issues a JWT for a guest student under the fixed `demo` organization.
+ */
+const createDemoGuestSession = async (req, res, next) => {
+  try {
+    let demoAdmin = await User.findOne({ role: "admin", tenantKey: "demo" });
+    if (!demoAdmin) {
+      try {
+        await seedDemoPaper();
+      } catch (seedError) {
+        console.error('Demo paper seed failed during demo session request:', seedError);
+      }
+      demoAdmin = await User.findOne({ role: "admin", tenantKey: "demo" });
+    }
+
+    if (!demoAdmin) {
+      return res.status(503).json({
+        success: false,
+        message:
+          "Demo exam is not configured. Ask an administrator to run the demo seed script.",
+      });
+    }
+
+    let student = await User.findOne({
+      role: "student",
+      tenantAdmin: demoAdmin._id,
+      studentCredential: "demo-guest",
+    });
+
+    if (!student) {
+      student = await User.create({
+        name: "Demo Guest",
+        email: `demo-guest-${Date.now()}@demo.cbt.local`,
+        password: `demo-guest-${Date.now()}`,
+        studentCredential: "demo-guest",
+        role: "student",
+        tenantAdmin: demoAdmin._id,
+        createdBy: demoAdmin._id,
+      });
+    } else {
+      await ExamSession.deleteMany({ student: student._id });
+    }
+
+    const token = generateToken(student);
+
+    return res.status(200).json({
+      success: true,
+      message: "Demo session started.",
+      data: {
+        user: serializeUser(student),
+        token,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   registerSuperAdmin,
   loginSuperAdmin,
@@ -440,5 +500,6 @@ module.exports = {
   registerStudent,
   loginStudent,
   createStudentSession,
+  createDemoGuestSession,
   buildTenantKey,
 };

@@ -22,15 +22,19 @@ const protect = async (req, res, next) => {
     req.user = user;
     return next();
   } catch (error) {
+    const tokenError = new Error('Invalid or expired token.');
+    tokenError.statusCode = 401;
     res.status(401);
-    return next(new Error('Invalid or expired token.'));
+    return next(tokenError);
   }
 };
 
 const allowRoles = (...roles) => (req, res, next) => {
   if (!req.user || !roles.includes(req.user.role)) {
+    const roleError = new Error('You are not allowed to access this resource.');
+    roleError.statusCode = 403;
     res.status(403);
-    return next(new Error('You are not allowed to access this resource.'));
+    return next(roleError);
   }
 
   return next();

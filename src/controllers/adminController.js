@@ -6,15 +6,24 @@ const Submission = require("../models/Submission");
 const User = require("../models/User");
 const ExamConfig = require("../models/ExamConfig");
 const ExamSession = require("../models/ExamSession");
-const { cloudinary } = require("../config/cloudinary");
+const { cloudinary, isCloudinaryConfigured } = require("../config/cloudinary");
 const { buildTenantKey } = require("./authController");
 const {
   resolveTenantForAdminRequest,
   ensureSuperAdmin,
 } = require("../utils/tenantContext");
+const { seedDemoPaper } = require("../utils/demoSeed");
 
-const uploadBufferToCloudinary = (buffer, folder) =>
-  new Promise((resolve, reject) => {
+const uploadBufferToCloudinary = (buffer, folder) => {
+  if (!isCloudinaryConfigured()) {
+    const error = new Error(
+      'Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET in the environment.',
+    );
+    error.statusCode = 503;
+    return Promise.reject(error);
+  }
+
+  return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
       { folder },
       (error, result) => {
@@ -27,6 +36,7 @@ const uploadBufferToCloudinary = (buffer, folder) =>
 
     streamifier.createReadStream(buffer).pipe(uploadStream);
   });
+};
 
 const toTenantObjectId = (value) => {
   if (!value) {
@@ -1170,7 +1180,6 @@ const exportAllSubmissionsDetailedCsv = async (req, res, next) => {
 
 const deleteStudent = async (req, res, next) => {
   try {
-    ensureSuperAdmin(req);
     const tenantAdmin = resolveTenantForAdminRequest(req);
     const { studentId } = req.params;
 
@@ -1200,7 +1209,6 @@ const deleteStudent = async (req, res, next) => {
 
 const resetAllStudentsData = async (req, res, next) => {
   try {
-    ensureSuperAdmin(req);
     const tenantAdmin = resolveTenantForAdminRequest(req);
     const students = await User.find({ role: "student", tenantAdmin }).select(
       "_id",
@@ -1248,10 +1256,25 @@ const getManagedAdmins = async (req, res, next) => {
     ensureSuperAdmin(req);
 
     const admins = await User.find({ role: "admin" })
-      .select("name email phone studentLimit tenantKey createdAt createdBy")
+      .select("name email tenantKey createdAt createdBy")
       .sort({ createdAt: -1 });
 
     return res.status(200).json({ success: true, data: admins });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const seedDemoPaperContent = async (req, res, next) => {
+  try {
+    ensureSuperAdmin(req);
+
+    const result = await seedDemoPaper(req.user._id);
+    return res.status(200).json({
+      success: true,
+      message: "Demo paper seed completed successfully.",
+      data: result,
+    });
   } catch (error) {
     return next(error);
   }
@@ -1265,8 +1288,6 @@ const createManagedAdmin = async (req, res, next) => {
       name,
       email,
       password,
-      phone,
-      studentLimit,
       tenantKey: rawTenantKey,
       organizationCode,
     } = req.body;
@@ -1306,8 +1327,6 @@ const createManagedAdmin = async (req, res, next) => {
       name,
       email: normalizedEmail,
       password,
-      phone,
-      studentLimit: Number(studentLimit) || 0,
       role: "admin",
       tenantKey,
       createdBy: req.user._id,
@@ -1320,9 +1339,7 @@ const createManagedAdmin = async (req, res, next) => {
         id: admin._id,
         name: admin.name,
         email: admin.email,
-        phone: admin.phone,
         role: admin.role,
-        studentLimit: admin.studentLimit,
         tenantKey: admin.tenantKey,
         organizationCode: admin.tenantKey,
       },
@@ -1336,7 +1353,7 @@ const createAdditionalSuperAdmin = async (req, res, next) => {
   try {
     ensureSuperAdmin(req);
 
-    const { name, email, password, phone } = req.body;
+    const { name, email, password } = req.body;
     const normalizedEmail = String(email || "").toLowerCase();
 
     const existing = await User.findOne({
@@ -1353,7 +1370,6 @@ const createAdditionalSuperAdmin = async (req, res, next) => {
       name,
       email: normalizedEmail,
       password,
-      phone,
       role: "super_admin",
       createdBy: req.user._id,
     });
@@ -1365,34 +1381,8 @@ const createAdditionalSuperAdmin = async (req, res, next) => {
         id: superAdmin._id,
         name: superAdmin.name,
         email: superAdmin.email,
-        phone: superAdmin.phone,
         role: superAdmin.role,
       },
-    });
-  } catch (error) {
-    return next(error);
-  }
-};
-
-const deleteManagedAdmin = async (req, res, next) => {
-  try {
-    ensureSuperAdmin(req);
-    const { adminId } = req.params;
-
-    const admin = await User.findOne({ _id: adminId, role: "admin" });
-    if (!admin) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Organization admin not found." });
-    }
-
-    // We don't delete student data or questions automatically for safety, 
-    // but we remove the admin account.
-    await admin.deleteOne();
-
-    return res.status(200).json({
-      success: true,
-      message: "Organization admin deleted successfully.",
     });
   } catch (error) {
     return next(error);
@@ -1421,7 +1411,7 @@ module.exports = {
   updateExamConfig,
   forceEndExam,
   getManagedAdmins,
+  seedDemoPaperContent,
   createManagedAdmin,
-  deleteManagedAdmin,
   createAdditionalSuperAdmin,
 };
