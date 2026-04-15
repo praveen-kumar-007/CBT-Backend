@@ -28,6 +28,7 @@ const {
   updateManagedAdmin,
   deleteManagedAdmin,
   createAdditionalSuperAdmin,
+  importQuestionsFromExcel,
 } = require("../controllers/adminController");
 const { protect, allowRoles } = require("../middlewares/authMiddleware");
 const { attachDemoPaperTenant } = require("../middlewares/demoPaperMiddleware");
@@ -217,6 +218,12 @@ router.post(
     validateRequest,
   ],
   createQuestion,
+);
+
+router.post(
+  "/questions/import",
+  upload.single("questionFile"),
+  importQuestionsFromExcel,
 );
 
 router.get(

@@ -6,6 +6,7 @@ const Submission = require("../models/Submission");
 const User = require("../models/User");
 const ExamConfig = require("../models/ExamConfig");
 const ExamSession = require("../models/ExamSession");
+const XLSX = require("xlsx");
 const { cloudinary, isCloudinaryConfigured } = require("../config/cloudinary");
 const { buildTenantKey } = require("./authController");
 const {
@@ -114,16 +115,19 @@ const deleteSection = async (req, res, next) => {
     const tenantAdmin = resolveTenantForAdminRequest(req);
     const { sectionId } = req.params;
 
-    const questionCount = await Question.countDocuments({
-      tenantAdmin,
-      section: sectionId,
-    });
-    if (questionCount > 0) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Cannot delete section with existing questions. Remove questions first.",
-      });
+    const questions = await Question.find({ tenantAdmin, section: sectionId }).select(
+      "imagePublicId",
+    );
+
+    if (questions.length > 0) {
+      await Promise.all(
+        questions.map(async (question) => {
+          if (question.imagePublicId) {
+            await cloudinary.uploader.destroy(question.imagePublicId);
+          }
+        }),
+      );
+      await Question.deleteMany({ tenantAdmin, section: sectionId });
     }
 
     const deleted = await Section.findOneAndDelete({
@@ -189,6 +193,205 @@ const createQuestion = async (req, res, next) => {
       success: true,
       message: "Question created successfully.",
       data: populated,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const normalizeCorrectOptionValue = (value) => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const text = String(value).trim().toLowerCase();
+  if (!text) {
+    return null;
+  }
+
+  const mapping = {
+    option1: 0,
+    option2: 1,
+    option3: 2,
+    option4: 3,
+    a: 0,
+    b: 1,
+    c: 2,
+    d: 3,
+    '1': 0,
+    '2': 1,
+    '3': 2,
+    '4': 3,
+  };
+
+  return mapping[text] ?? null;
+};
+
+const findOrCreateSectionByName = async (tenantAdmin, rawName) => {
+  const name = String(rawName || '').trim();
+  if (!name) return null;
+
+  return await Section.findOneAndUpdate(
+    { tenantAdmin, name },
+    { name },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+};
+
+const workbookToQuestionRows = (buffer) => {
+  const workbook = XLSX.read(buffer, { type: 'buffer' });
+  const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+  if (!firstSheet) {
+    return [];
+  }
+
+  const rows = XLSX.utils.sheet_to_json(firstSheet, {
+    header: 1,
+    defval: '',
+    raw: false,
+  });
+
+  if (!rows.length) return [];
+
+  const normalized = rows.map((row) => row.map((cell) => String(cell || '').trim()));
+  let headerRow = normalized[0];
+  let hasHeader = false;
+  const headerNames = headerRow.map((cell) => cell.toLowerCase());
+
+  if (
+    headerNames.some((cell) => cell.includes('question')) &&
+    headerNames.some((cell) => cell.includes('option1')) &&
+    headerNames.some((cell) => cell.includes('correct'))
+  ) {
+    hasHeader = true;
+  }
+
+  const sectionIndex = headerNames.findIndex((cell) => cell === 'section' || cell.includes('section'));
+  const questionIndex = headerNames.findIndex((cell) => cell === 'question');
+  const optionIndices = [
+    headerNames.findIndex((cell) => cell === 'option1' || cell.includes('option1')),
+    headerNames.findIndex((cell) => cell === 'option2' || cell.includes('option2')),
+    headerNames.findIndex((cell) => cell === 'option3' || cell.includes('option3')),
+    headerNames.findIndex((cell) => cell === 'option4' || cell.includes('option4')),
+  ];
+  const correctIndex = headerNames.findIndex((cell) => cell.includes('correct'));
+  const marksIndex = headerNames.findIndex((cell) => cell.includes('mark'));
+
+  const effectiveQuestionIndex = questionIndex >= 0 ? questionIndex : 1;
+  const effectiveOptionIndices = optionIndices.map((idx, fallback) => (idx >= 0 ? idx : 2 + fallback));
+  const effectiveCorrectIndex = correctIndex >= 0 ? correctIndex : 6;
+  const effectiveMarksIndex = marksIndex >= 0 ? marksIndex : 7;
+
+  const output = [];
+  let currentSection = '';
+
+  for (let rowIndex = 0; rowIndex < normalized.length; rowIndex += 1) {
+    const row = normalized[rowIndex];
+    if (!row.some((cell) => cell)) {
+      continue;
+    }
+
+    const firstCell = String(row[0] || '').trim();
+    if (firstCell.toLowerCase().startsWith('section') && row.slice(1).every((cell) => !cell)) {
+      currentSection = firstCell;
+      continue;
+    }
+
+    if (hasHeader && rowIndex === 0) {
+      continue;
+    }
+
+    if (sectionIndex >= 0 && String(row[sectionIndex]).trim()) {
+      currentSection = String(row[sectionIndex]).trim();
+    }
+
+    const questionText = String(row[effectiveQuestionIndex] || '').trim();
+    if (!questionText) {
+      continue;
+    }
+
+    const options = effectiveOptionIndices.map((idx) => String(row[idx] || '').trim());
+    if (options.some((opt) => !opt)) {
+      continue;
+    }
+
+    const correctOptionIndex = normalizeCorrectOptionValue(row[effectiveCorrectIndex]);
+    if (correctOptionIndex === null) {
+      continue;
+    }
+
+    const marks = Number(String(row[effectiveMarksIndex] || '1').trim()) || 1;
+
+    output.push({
+      sectionName: currentSection || 'Default Section',
+      questionText,
+      options,
+      correctOptionIndex,
+      marks,
+    });
+  }
+
+  return output;
+};
+
+const importQuestionsFromExcel = async (req, res, next) => {
+  try {
+    const tenantAdmin = resolveTenantForAdminRequest(req);
+    if (!req.file) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'Excel file is required.' });
+    }
+
+    const rows = workbookToQuestionRows(req.file.buffer);
+    if (!rows.length) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'No valid question rows found in the Excel file.' });
+    }
+
+    const sectionCache = new Map();
+    const questionsToCreate = [];
+
+    for (const row of rows) {
+      if (!row.questionText || row.options.some((opt) => !opt)) {
+        continue;
+      }
+
+      const sectionName = String(row.sectionName || 'Default Section').trim() || 'Default Section';
+      let section = sectionCache.get(sectionName);
+      if (!section) {
+        section = await findOrCreateSectionByName(tenantAdmin, sectionName);
+        sectionCache.set(sectionName, section);
+      }
+
+      if (!section) {
+        continue;
+      }
+
+      questionsToCreate.push({
+        tenantAdmin,
+        section: section._id,
+        questionText: row.questionText,
+        options: row.options,
+        correctOptionIndex: row.correctOptionIndex,
+        marks: row.marks,
+        createdBy: req.user._id,
+      });
+    }
+
+    if (!questionsToCreate.length) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'No valid questions could be imported from the Excel file.' });
+    }
+
+    const createdQuestions = await Question.insertMany(questionsToCreate, { ordered: false });
+
+    return res.status(201).json({
+      success: true,
+      message: `${createdQuestions.length} question(s) imported successfully from Excel.`,
+      data: { importedCount: createdQuestions.length },
     });
   } catch (error) {
     return next(error);
@@ -1541,4 +1744,5 @@ module.exports = {
   updateManagedAdmin,
   deleteManagedAdmin,
   createAdditionalSuperAdmin,
+  importQuestionsFromExcel,
 };

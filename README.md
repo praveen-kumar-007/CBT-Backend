@@ -83,6 +83,7 @@ npm start
 - `PUT /api/admin/sections/:sectionId`
 - `DELETE /api/admin/sections/:sectionId`
 - `POST /api/admin/questions` (multipart supported: `questionImage`)
+- `POST /api/admin/questions/import` (multipart supported: `questionFile`; Excel .xlsx/.xls import with section detection)
 - `GET /api/admin/questions/section/:sectionId`
 - `PUT /api/admin/questions/:questionId`
 - `DELETE /api/admin/questions/:questionId`
