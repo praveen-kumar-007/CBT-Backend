@@ -24,16 +24,18 @@ const defaultOrigins = [
   "https://exam.indocreonix.com",
 ];
 
-const wildcardOrigins = configuredOrigins.filter((origin) => origin.includes("*"));
-const exactOrigins = configuredOrigins.filter((origin) => !origin.includes("*"));
+const wildcardOrigins = configuredOrigins.filter((origin) =>
+  origin.includes("*"),
+);
+const exactOrigins = configuredOrigins.filter(
+  (origin) => !origin.includes("*"),
+);
 const allowedOrigins = [...new Set([...exactOrigins, ...defaultOrigins])];
 
 const originPatternToRegExp = (pattern) =>
   new RegExp(
     "^" +
-      pattern
-        .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
-        .replace(/\\\*/g, ".*") +
+      pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\\\*/g, ".*") +
       "$",
     "i",
   );
@@ -46,7 +48,9 @@ const isOriginAllowed = (origin) => {
   }
 
   if (
-    wildcardOrigins.some((pattern) => originPatternToRegExp(pattern).test(origin))
+    wildcardOrigins.some((pattern) =>
+      originPatternToRegExp(pattern).test(origin),
+    )
   ) {
     return true;
   }
