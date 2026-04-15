@@ -21,12 +21,24 @@ const defaultOrigins = [
   "http://localhost:3000",
   "http://localhost:5173",
   "https://examindo.vercel.app",
+  "https://exam.indocreonix.com",
 ];
 
-const allowedOrigins = [...new Set([...configuredOrigins, ...defaultOrigins])];
-const allowVercelPreview = configuredOrigins.includes("https://*.vercel.app");
+const wildcardOrigins = configuredOrigins.filter((origin) => origin.includes("*"));
+const exactOrigins = configuredOrigins.filter((origin) => !origin.includes("*"));
+const allowedOrigins = [...new Set([...exactOrigins, ...defaultOrigins])];
 
-const isAllowedOrigin = (origin) => {
+const originPatternToRegExp = (pattern) =>
+  new RegExp(
+    "^" +
+      pattern
+        .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+        .replace(/\\\*/g, ".*") +
+      "$",
+    "i",
+  );
+
+const isOriginAllowed = (origin) => {
   if (!origin) return true;
 
   if (allowedOrigins.includes(origin)) {
@@ -34,8 +46,7 @@ const isAllowedOrigin = (origin) => {
   }
 
   if (
-    allowVercelPreview &&
-    /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin)
+    wildcardOrigins.some((pattern) => originPatternToRegExp(pattern).test(origin))
   ) {
     return true;
   }
