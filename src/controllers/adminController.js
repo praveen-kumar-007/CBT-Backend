@@ -897,6 +897,7 @@ const updateExamConfig = async (req, res, next) => {
         tenantAdmin,
         durationInMinutes,
         startAt: parsedStartAt,
+        forceEndedAt: null,
         autoSubmitAfterTime: typeof autoSubmitAfterTime === 'boolean' ? autoSubmitAfterTime : true,
         examinerName:
           typeof examinerName === "string" && examinerName.trim()
@@ -1255,9 +1256,48 @@ const getManagedAdmins = async (req, res, next) => {
   try {
     ensureSuperAdmin(req);
 
-    const admins = await User.find({ role: "admin" })
-      .select("name email tenantKey createdAt createdBy")
-      .sort({ createdAt: -1 });
+    const admins = await User.aggregate([
+      { $match: { role: "admin" } },
+      {
+        $lookup: {
+          from: User.collection.name,
+          let: { adminId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$role", "student"] },
+                    { $eq: ["$tenantAdmin", "$$adminId"] },
+                  ],
+                },
+              },
+            },
+            { $count: "count" },
+          ],
+          as: "studentStats",
+        },
+      },
+      {
+        $addFields: {
+          studentCount: { $ifNull: [{ $arrayElemAt: ["$studentStats.count", 0] }, 0] },
+          studentLimit: { $ifNull: ["$studentLimit", 0] },
+        },
+      },
+      {
+        $project: {
+          name: 1,
+          email: 1,
+          phone: 1,
+          tenantKey: 1,
+          createdAt: 1,
+          studentLimit: 1,
+          studentCount: 1,
+          createdBy: 1,
+        },
+      },
+      { $sort: { createdAt: -1 } },
+    ]);
 
     return res.status(200).json({ success: true, data: admins });
   } catch (error) {
@@ -1290,6 +1330,7 @@ const createManagedAdmin = async (req, res, next) => {
       password,
       tenantKey: rawTenantKey,
       organizationCode,
+      studentLimit: rawStudentLimit,
     } = req.body;
 
     const normalizedEmail = String(email || "").toLowerCase();
@@ -1323,6 +1364,12 @@ const createManagedAdmin = async (req, res, next) => {
         });
     }
 
+    const studentLimit = rawStudentLimit !== undefined
+      ? (Number.isInteger(rawStudentLimit)
+        ? rawStudentLimit
+        : parseInt(rawStudentLimit, 10))
+      : 100;
+
     const admin = await User.create({
       name,
       email: normalizedEmail,
@@ -1330,6 +1377,7 @@ const createManagedAdmin = async (req, res, next) => {
       role: "admin",
       tenantKey,
       createdBy: req.user._id,
+      studentLimit,
     });
 
     return res.status(201).json({
@@ -1342,6 +1390,83 @@ const createManagedAdmin = async (req, res, next) => {
         role: admin.role,
         tenantKey: admin.tenantKey,
         organizationCode: admin.tenantKey,
+        studentLimit: admin.studentLimit || 0,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const deleteManagedAdmin = async (req, res, next) => {
+  try {
+    ensureSuperAdmin(req);
+
+    const { adminId } = req.params;
+
+    const admin = await User.findOne({
+      _id: adminId,
+      role: "admin",
+    });
+
+    if (!admin) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Organization admin not found." });
+    }
+
+    await admin.deleteOne();
+
+    return res.status(200).json({
+      success: true,
+      message: "Organization admin deleted successfully.",
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const updateManagedAdmin = async (req, res, next) => {
+  try {
+    ensureSuperAdmin(req);
+
+    const { adminId } = req.params;
+    const { studentLimit: rawStudentLimit } = req.body;
+
+    const admin = await User.findOne({
+      _id: adminId,
+      role: "admin",
+    });
+
+    if (!admin) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Organization admin not found." });
+    }
+
+    if (rawStudentLimit !== undefined) {
+      const studentLimit = Number.isInteger(rawStudentLimit)
+        ? rawStudentLimit
+        : parseInt(rawStudentLimit, 10);
+
+      if (Number.isNaN(studentLimit) || studentLimit < 1) {
+        return res.status(400).json({
+          success: false,
+          message: "studentLimit must be an integer greater than 0.",
+        });
+      }
+
+      admin.studentLimit = studentLimit;
+    }
+
+    await admin.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Organization admin updated successfully.",
+      data: {
+        id: admin._id,
+        studentLimit: admin.studentLimit || 0,
       },
     });
   } catch (error) {
@@ -1413,5 +1538,7 @@ module.exports = {
   getManagedAdmins,
   seedDemoPaperContent,
   createManagedAdmin,
+  updateManagedAdmin,
+  deleteManagedAdmin,
   createAdditionalSuperAdmin,
 };

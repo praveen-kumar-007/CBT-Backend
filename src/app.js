@@ -79,6 +79,7 @@ const corsOptions = {
     "Accept",
     "Origin",
     "Access-Control-Allow-Origin",
+    "X-Organization-Admin-Id",
   ],
   credentials: true,
   optionsSuccessStatus: 200,
@@ -105,6 +106,12 @@ app.get("/admin/super-admin/login", (req, res) => {
 
 app.get("/admin/dashboard", (req, res) => {
   res.redirect(`${adminFrontendBase}/admin/dashboard`);
+});
+
+app.get(/^\/admin(?:\/.*)?$/, (req, res) => {
+  const targetPath = req.path;
+  const redirectUrl = `${adminFrontendBase}${targetPath}`;
+  res.redirect(redirectUrl);
 });
 
 app.get("/admin", (req, res) => {

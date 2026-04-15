@@ -247,10 +247,11 @@ const registerStudent = async (req, res, next) => {
       role: "student",
       tenantAdmin: tenantAdmin._id,
     });
-    if (currentCount >= (tenantAdmin.studentLimit || 0)) {
+    const studentLimit = tenantAdmin.studentLimit > 0 ? tenantAdmin.studentLimit : 100;
+    if (currentCount >= studentLimit) {
       return res.status(403).json({
         success: false,
-        message: `Student seat limit reached (${tenantAdmin.studentLimit || 0}). Contact your administrator for more seats.`,
+        message: `Student seat limit reached (${studentLimit}). Contact your administrator for more seats.`,
       });
     }
 
@@ -395,10 +396,11 @@ const createStudentSession = async (req, res, next) => {
         role: "student",
         tenantAdmin: tenantAdmin._id,
       });
-      if (currentCount >= (tenantAdmin.studentLimit || 0)) {
+      const studentLimit = tenantAdmin.studentLimit > 0 ? tenantAdmin.studentLimit : 100;
+      if (currentCount >= studentLimit) {
         return res.status(403).json({
           success: false,
-          message: `Student seat limit reached (${tenantAdmin.studentLimit || 0}). Contact your administrator for more seats.`,
+          message: `Student seat limit reached (${studentLimit}). Contact your administrator for more seats.`,
         });
       }
 

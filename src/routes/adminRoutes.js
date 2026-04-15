@@ -25,6 +25,8 @@ const {
   getManagedAdmins,
   seedDemoPaperContent,
   createManagedAdmin,
+  updateManagedAdmin,
+  deleteManagedAdmin,
   createAdditionalSuperAdmin,
 } = require("../controllers/adminController");
 const { protect, allowRoles } = require("../middlewares/authMiddleware");
@@ -66,9 +68,35 @@ router.post(
       .isString()
       .isLength({ min: 3, max: 40 })
       .withMessage("tenantKey must be 3 to 40 characters."),
+    body("studentLimit")
+      .optional()
+      .isInt({ min: 1 })
+      .withMessage("studentLimit must be an integer greater than 0."),
     validateRequest,
   ],
   createManagedAdmin,
+);
+
+router.put(
+  "/managed-admins/:adminId",
+  [
+    param("adminId").isMongoId().withMessage("Valid admin id is required."),
+    body("studentLimit")
+      .optional()
+      .isInt({ min: 1 })
+      .withMessage("studentLimit must be an integer greater than 0."),
+    validateRequest,
+  ],
+  updateManagedAdmin,
+);
+
+router.delete(
+  "/managed-admins/:adminId",
+  [
+    param("adminId").isMongoId().withMessage("Valid admin id is required."),
+    validateRequest,
+  ],
+  deleteManagedAdmin,
 );
 
 router.post(

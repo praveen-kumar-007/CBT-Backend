@@ -260,6 +260,70 @@ const saveExamProgress = async (req, res, next) => {
     }
 
     session.progressAnswers = Array.from(newProgressMap.values());
+    const normalizeQuestionInteractions = (rawInteractions) => {
+      const normalized = [];
+      const seenQuestionIds = new Set();
+
+      const servedQuestionMap = new Map(
+        session.servedQuestions.map((q) => [String(q.question), q]),
+      );
+
+      if (!Array.isArray(rawInteractions)) {
+        return [];
+      }
+
+      for (const interaction of rawInteractions) {
+        const questionId = String(interaction?.questionId || interaction?.question || "");
+        if (!questionId || seenQuestionIds.has(questionId)) {
+          continue;
+        }
+
+        const servedQuestion = servedQuestionMap.get(questionId);
+        if (!servedQuestion) {
+          continue;
+        }
+
+        const rawHistory = Array.isArray(interaction?.selectionHistory)
+          ? interaction.selectionHistory
+          : [];
+
+        const selectionHistory = rawHistory
+          .map((idx) => toOriginalOptionIndex(servedQuestion, Number(idx)))
+          .filter((idx) => idx !== null);
+
+        const firstMapped = toOriginalOptionIndex(
+          servedQuestion,
+          Number(interaction?.firstSelectedOptionIndex),
+        );
+        const finalMapped = toOriginalOptionIndex(
+          servedQuestion,
+          Number(interaction?.finalSelectedOptionIndex),
+        );
+
+        normalized.push({
+          question: servedQuestion.question,
+          firstSelectedOptionIndex:
+            firstMapped !== null
+              ? firstMapped
+              : selectionHistory.length
+                ? selectionHistory[0]
+                : null,
+          finalSelectedOptionIndex:
+            finalMapped !== null
+              ? finalMapped
+              : selectionHistory.length
+                ? selectionHistory[selectionHistory.length - 1]
+                : null,
+          changeCount: toSafeInt(interaction?.changeCount, 0),
+          selectionHistory,
+        });
+
+        seenQuestionIds.add(questionId);
+      }
+
+      return normalized;
+    };
+
     session.progressMeta = {
       terminatedDueToCheating:
         Boolean(examMeta?.terminatedDueToCheating) ||
@@ -274,9 +338,9 @@ const saveExamProgress = async (req, res, next) => {
       totalOptionChanges: Number.isInteger(examMeta?.totalOptionChanges)
         ? examMeta.totalOptionChanges
         : session.progressMeta?.totalOptionChanges || 0,
-      questionInteractions: Array.isArray(examMeta?.questionInteractions)
-        ? examMeta.questionInteractions
-        : session.progressMeta?.questionInteractions || [],
+      questionInteractions: normalizeQuestionInteractions(
+        examMeta?.questionInteractions || session.progressMeta?.questionInteractions,
+      ),
     };
 
     await session.save();
