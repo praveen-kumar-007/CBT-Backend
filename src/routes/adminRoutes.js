@@ -24,6 +24,7 @@ const {
   forceEndExam,
   getManagedAdmins,
   createManagedAdmin,
+  deleteManagedAdmin,
   createAdditionalSuperAdmin,
 } = require("../controllers/adminController");
 const { protect, allowRoles } = require("../middlewares/authMiddleware");
@@ -43,7 +44,14 @@ const upload = multer({
 router.use(protect, allowRoles("admin", "super_admin"));
 
 router.get("/managed-admins", getManagedAdmins);
-router.delete("/managed-admins/:adminId", deleteManagedAdmin);
+router.delete(
+  "/managed-admins/:adminId",
+  [
+    param("adminId").isMongoId().withMessage("Valid admin id is required."),
+    validateRequest,
+  ],
+  deleteManagedAdmin,
+);
 
 router.post(
   "/managed-admins",
