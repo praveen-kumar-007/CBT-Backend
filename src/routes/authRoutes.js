@@ -55,7 +55,11 @@ router.post(
   loginStudent,
 );
 
-router.post("/student/demo-session", createDemoGuestSession);
+router
+  .route("/student/demo-session")
+  .post(createDemoGuestSession)
+  .get(createDemoGuestSession)
+  .options((req, res) => res.sendStatus(204));
 
 router.post(
   "/student/session",
