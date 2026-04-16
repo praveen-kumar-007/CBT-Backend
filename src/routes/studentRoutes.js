@@ -23,9 +23,10 @@ router.put(
   [
     param('sessionId').isMongoId().withMessage('Valid session id is required.'),
     body('answers')
-      .isArray({ min: 1 })
-      .withMessage('Answers must be a non-empty array.'),
+      .isArray()
+      .withMessage('Answers must be an array.'),
     body('answers.*.questionId')
+      .optional()
       .isMongoId()
       .withMessage('Valid question id is required.'),
     body('answers.*.selectedOptionIndex')

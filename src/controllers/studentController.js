@@ -325,14 +325,23 @@ const saveExamProgress = async (req, res, next) => {
     };
 
     const normalizeSecurityEvents = (rawEvents) => {
-      if (!Array.isArray(rawEvents)) return session.progressMeta?.securityEvents || [];
-      return rawEvents
+      const existingEvents = Array.isArray(session.progressMeta?.securityEvents)
+        ? session.progressMeta.securityEvents
+        : [];
+
+      if (!Array.isArray(rawEvents)) {
+        return existingEvents;
+      }
+
+      const incomingEvents = rawEvents
         .filter((event) => event && typeof event.type === "string")
         .map((event) => ({
           type: event.type,
           message: typeof event.message === "string" ? event.message : String(event.message || ""),
           timestamp: event.timestamp ? new Date(event.timestamp) : new Date(),
         }));
+
+      return [...existingEvents, ...incomingEvents];
     };
 
     session.progressMeta = {
@@ -353,7 +362,9 @@ const saveExamProgress = async (req, res, next) => {
         examMeta?.questionInteractions || session.progressMeta?.questionInteractions,
       ),
       securityEvents: normalizeSecurityEvents(
-        examMeta?.securityEvents || session.progressMeta?.securityEvents,
+        Array.isArray(examMeta?.securityEvents)
+          ? examMeta.securityEvents
+          : session.progressMeta?.securityEvents,
       ),
     };
 
@@ -578,6 +589,25 @@ const submitExam = async (req, res, next) => {
     const cleanedRemark = typeof remark === "string" ? remark.trim() : "";
     const questionInteractions = normalizeQuestionInteractions();
 
+    const normalizeSubmissionSecurityEvents = (rawEvents) => {
+      if (Array.isArray(rawEvents)) {
+        return rawEvents
+          .filter((event) => event && typeof event.type === "string")
+          .map((event) => ({
+            type: event.type,
+            message:
+              typeof event.message === "string"
+                ? event.message
+                : String(event.message || ""),
+            timestamp: event.timestamp ? new Date(event.timestamp) : new Date(),
+          }));
+      }
+
+      return Array.isArray(session.progressMeta?.securityEvents)
+        ? session.progressMeta.securityEvents
+        : [];
+    };
+
     const submission = await Submission.create({
       tenantAdmin,
       student: req.user._id,
@@ -597,6 +627,11 @@ const submitExam = async (req, res, next) => {
         cheatingAttempts: toSafeInt(examMeta?.cheatingAttempts, 0),
         totalOptionChanges: toSafeInt(examMeta?.totalOptionChanges, 0),
         questionInteractions,
+        securityEvents: normalizeSubmissionSecurityEvents(
+          Array.isArray(examMeta?.securityEvents)
+            ? examMeta.securityEvents
+            : session.progressMeta?.securityEvents,
+        ),
       },
     });
 

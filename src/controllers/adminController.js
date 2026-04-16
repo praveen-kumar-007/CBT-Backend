@@ -711,6 +711,7 @@ const getRecentSubmissions = async (req, res, next) => {
           totalOptionChanges: {
             $sum: { $ifNull: ["$examMeta.totalOptionChanges", 0] },
           },
+          latestSecurityEvents: { $first: "$examMeta.securityEvents" },
           sections: {
             $push: {
               section: "$section",
@@ -819,6 +820,7 @@ const getRecentSubmissions = async (req, res, next) => {
           terminatedDueToCheating: 1,
           cheatingAttempts: 1,
           totalOptionChanges: 1,
+          latestSecurityEvents: 1,
           sections: 1,
         },
       },
@@ -841,6 +843,9 @@ const getRecentSubmissions = async (req, res, next) => {
       terminatedDueToCheating: Boolean(entry.terminatedDueToCheating),
       cheatingAttempts: entry.cheatingAttempts || 0,
       totalOptionChanges: entry.totalOptionChanges || 0,
+      latestSecurityEvents: Array.isArray(entry.latestSecurityEvents)
+        ? entry.latestSecurityEvents
+        : [],
       sections: Array.isArray(entry.sections) ? entry.sections : [],
     }));
 
