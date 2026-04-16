@@ -18,7 +18,7 @@ const { seedDemoPaper } = require("../utils/demoSeed");
 const uploadBufferToCloudinary = (buffer, folder) => {
   if (!isCloudinaryConfigured()) {
     const error = new Error(
-      'Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET in the environment.',
+      "Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET in the environment.",
     );
     error.statusCode = 503;
     return Promise.reject(error);
@@ -115,9 +115,10 @@ const deleteSection = async (req, res, next) => {
     const tenantAdmin = resolveTenantForAdminRequest(req);
     const { sectionId } = req.params;
 
-    const questions = await Question.find({ tenantAdmin, section: sectionId }).select(
-      "imagePublicId",
-    );
+    const questions = await Question.find({
+      tenantAdmin,
+      section: sectionId,
+    }).select("imagePublicId");
 
     if (questions.length > 0) {
       await Promise.all(
@@ -218,17 +219,17 @@ const normalizeCorrectOptionValue = (value) => {
     b: 1,
     c: 2,
     d: 3,
-    '1': 0,
-    '2': 1,
-    '3': 2,
-    '4': 3,
+    1: 0,
+    2: 1,
+    3: 2,
+    4: 3,
   };
 
   return mapping[text] ?? null;
 };
 
 const findOrCreateSectionByName = async (tenantAdmin, rawName) => {
-  const name = String(rawName || '').trim();
+  const name = String(rawName || "").trim();
   if (!name) return null;
 
   return await Section.findOneAndUpdate(
@@ -239,7 +240,7 @@ const findOrCreateSectionByName = async (tenantAdmin, rawName) => {
 };
 
 const workbookToQuestionRows = (buffer) => {
-  const workbook = XLSX.read(buffer, { type: 'buffer' });
+  const workbook = XLSX.read(buffer, { type: "buffer" });
   const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
   if (!firstSheet) {
     return [];
@@ -247,43 +248,59 @@ const workbookToQuestionRows = (buffer) => {
 
   const rows = XLSX.utils.sheet_to_json(firstSheet, {
     header: 1,
-    defval: '',
+    defval: "",
     raw: false,
   });
 
   if (!rows.length) return [];
 
-  const normalized = rows.map((row) => row.map((cell) => String(cell || '').trim()));
+  const normalized = rows.map((row) =>
+    row.map((cell) => String(cell || "").trim()),
+  );
   let headerRow = normalized[0];
   let hasHeader = false;
   const headerNames = headerRow.map((cell) => cell.toLowerCase());
 
   if (
-    headerNames.some((cell) => cell.includes('question')) &&
-    headerNames.some((cell) => cell.includes('option1')) &&
-    headerNames.some((cell) => cell.includes('correct'))
+    headerNames.some((cell) => cell.includes("question")) &&
+    headerNames.some((cell) => cell.includes("option1")) &&
+    headerNames.some((cell) => cell.includes("correct"))
   ) {
     hasHeader = true;
   }
 
-  const sectionIndex = headerNames.findIndex((cell) => cell === 'section' || cell.includes('section'));
-  const questionIndex = headerNames.findIndex((cell) => cell === 'question');
+  const sectionIndex = headerNames.findIndex(
+    (cell) => cell === "section" || cell.includes("section"),
+  );
+  const questionIndex = headerNames.findIndex((cell) => cell === "question");
   const optionIndices = [
-    headerNames.findIndex((cell) => cell === 'option1' || cell.includes('option1')),
-    headerNames.findIndex((cell) => cell === 'option2' || cell.includes('option2')),
-    headerNames.findIndex((cell) => cell === 'option3' || cell.includes('option3')),
-    headerNames.findIndex((cell) => cell === 'option4' || cell.includes('option4')),
+    headerNames.findIndex(
+      (cell) => cell === "option1" || cell.includes("option1"),
+    ),
+    headerNames.findIndex(
+      (cell) => cell === "option2" || cell.includes("option2"),
+    ),
+    headerNames.findIndex(
+      (cell) => cell === "option3" || cell.includes("option3"),
+    ),
+    headerNames.findIndex(
+      (cell) => cell === "option4" || cell.includes("option4"),
+    ),
   ];
-  const correctIndex = headerNames.findIndex((cell) => cell.includes('correct'));
-  const marksIndex = headerNames.findIndex((cell) => cell.includes('mark'));
+  const correctIndex = headerNames.findIndex((cell) =>
+    cell.includes("correct"),
+  );
+  const marksIndex = headerNames.findIndex((cell) => cell.includes("mark"));
 
   const effectiveQuestionIndex = questionIndex >= 0 ? questionIndex : 1;
-  const effectiveOptionIndices = optionIndices.map((idx, fallback) => (idx >= 0 ? idx : 2 + fallback));
+  const effectiveOptionIndices = optionIndices.map((idx, fallback) =>
+    idx >= 0 ? idx : 2 + fallback,
+  );
   const effectiveCorrectIndex = correctIndex >= 0 ? correctIndex : 6;
   const effectiveMarksIndex = marksIndex >= 0 ? marksIndex : 7;
 
   const output = [];
-  let currentSection = '';
+  let currentSection = "";
 
   for (let rowIndex = 0; rowIndex < normalized.length; rowIndex += 1) {
     const row = normalized[rowIndex];
@@ -291,8 +308,11 @@ const workbookToQuestionRows = (buffer) => {
       continue;
     }
 
-    const firstCell = String(row[0] || '').trim();
-    if (firstCell.toLowerCase().startsWith('section') && row.slice(1).every((cell) => !cell)) {
+    const firstCell = String(row[0] || "").trim();
+    if (
+      firstCell.toLowerCase().startsWith("section") &&
+      row.slice(1).every((cell) => !cell)
+    ) {
       currentSection = firstCell;
       continue;
     }
@@ -305,25 +325,29 @@ const workbookToQuestionRows = (buffer) => {
       currentSection = String(row[sectionIndex]).trim();
     }
 
-    const questionText = String(row[effectiveQuestionIndex] || '').trim();
+    const questionText = String(row[effectiveQuestionIndex] || "").trim();
     if (!questionText) {
       continue;
     }
 
-    const options = effectiveOptionIndices.map((idx) => String(row[idx] || '').trim());
+    const options = effectiveOptionIndices.map((idx) =>
+      String(row[idx] || "").trim(),
+    );
     if (options.some((opt) => !opt)) {
       continue;
     }
 
-    const correctOptionIndex = normalizeCorrectOptionValue(row[effectiveCorrectIndex]);
+    const correctOptionIndex = normalizeCorrectOptionValue(
+      row[effectiveCorrectIndex],
+    );
     if (correctOptionIndex === null) {
       continue;
     }
 
-    const marks = Number(String(row[effectiveMarksIndex] || '1').trim()) || 1;
+    const marks = Number(String(row[effectiveMarksIndex] || "1").trim()) || 1;
 
     output.push({
-      sectionName: currentSection || 'Default Section',
+      sectionName: currentSection || "Default Section",
       questionText,
       options,
       correctOptionIndex,
@@ -340,14 +364,17 @@ const importQuestionsFromExcel = async (req, res, next) => {
     if (!req.file) {
       return res
         .status(400)
-        .json({ success: false, message: 'Excel file is required.' });
+        .json({ success: false, message: "Excel file is required." });
     }
 
     const rows = workbookToQuestionRows(req.file.buffer);
     if (!rows.length) {
       return res
         .status(400)
-        .json({ success: false, message: 'No valid question rows found in the Excel file.' });
+        .json({
+          success: false,
+          message: "No valid question rows found in the Excel file.",
+        });
     }
 
     const sectionCache = new Map();
@@ -358,7 +385,9 @@ const importQuestionsFromExcel = async (req, res, next) => {
         continue;
       }
 
-      const sectionName = String(row.sectionName || 'Default Section').trim() || 'Default Section';
+      const sectionName =
+        String(row.sectionName || "Default Section").trim() ||
+        "Default Section";
       let section = sectionCache.get(sectionName);
       if (!section) {
         section = await findOrCreateSectionByName(tenantAdmin, sectionName);
@@ -383,10 +412,15 @@ const importQuestionsFromExcel = async (req, res, next) => {
     if (!questionsToCreate.length) {
       return res
         .status(400)
-        .json({ success: false, message: 'No valid questions could be imported from the Excel file.' });
+        .json({
+          success: false,
+          message: "No valid questions could be imported from the Excel file.",
+        });
     }
 
-    const createdQuestions = await Question.insertMany(questionsToCreate, { ordered: false });
+    const createdQuestions = await Question.insertMany(questionsToCreate, {
+      ordered: false,
+    });
 
     return res.status(201).json({
       success: true,
@@ -575,6 +609,14 @@ const getAnalytics = async (req, res, next) => {
         Submission.countDocuments({ tenantAdmin }),
       ]);
 
+    const [activeSessionCount, eliminatedDueToCheating] = await Promise.all([
+      ExamSession.countDocuments({ tenantAdmin, isSubmitted: false }),
+      Submission.distinct("student", {
+        tenantAdmin: toTenantObjectId(tenantAdmin),
+        "examMeta.terminatedDueToCheating": true,
+      }).then((ids) => ids.length),
+    ]);
+
     const aggregate = await Submission.aggregate([
       { $match: { tenantAdmin: toTenantObjectId(tenantAdmin) } },
       {
@@ -629,6 +671,8 @@ const getAnalytics = async (req, res, next) => {
         sectionsCount,
         questionsCount,
         submissionsCount,
+        activeSessionCount,
+        eliminatedDueToCheating,
         averagePercent,
         bestScore: scoreInfo.bestScore || 0,
         cheatingTerminations: scoreInfo.cheatingTerminations || 0,
@@ -641,7 +685,6 @@ const getAnalytics = async (req, res, next) => {
     return next(error);
   }
 };
-
 
 const getRecentSubmissions = async (req, res, next) => {
   try {
@@ -659,9 +702,15 @@ const getRecentSubmissions = async (req, res, next) => {
           totalQuestions: { $sum: "$totalQuestions" },
           submissionsCount: { $sum: 1 },
           lastSubmittedAt: { $max: "$createdAt" },
-          terminatedDueToCheating: { $max: { $ifNull: ["$examMeta.terminatedDueToCheating", false] } },
-          cheatingAttempts: { $max: { $ifNull: ["$examMeta.cheatingAttempts", 0] } },
-          totalOptionChanges: { $sum: { $ifNull: ["$examMeta.totalOptionChanges", 0] } },
+          terminatedDueToCheating: {
+            $max: { $ifNull: ["$examMeta.terminatedDueToCheating", false] },
+          },
+          cheatingAttempts: {
+            $max: { $ifNull: ["$examMeta.cheatingAttempts", 0] },
+          },
+          totalOptionChanges: {
+            $sum: { $ifNull: ["$examMeta.totalOptionChanges", 0] },
+          },
           sections: {
             $push: {
               section: "$section",
@@ -670,7 +719,9 @@ const getRecentSubmissions = async (req, res, next) => {
               attemptedQuestions: "$attemptedQuestions",
               totalQuestions: "$totalQuestions",
               createdAt: "$createdAt",
-              terminatedDueToCheating: { $ifNull: ["$examMeta.terminatedDueToCheating", false] },
+              terminatedDueToCheating: {
+                $ifNull: ["$examMeta.terminatedDueToCheating", false],
+              },
             },
           },
         },
@@ -738,7 +789,9 @@ const getRecentSubmissions = async (req, res, next) => {
             _id: "$studentDoc._id",
             name: { $ifNull: ["$studentDoc.name", "Unknown Student"] },
             email: { $ifNull: ["$studentDoc.email", ""] },
-            studentCredential: { $ifNull: ["$studentDoc.studentCredential", ""] },
+            studentCredential: {
+              $ifNull: ["$studentDoc.studentCredential", ""],
+            },
           },
           totalScore: 1,
           totalMaxScore: 1,
@@ -748,7 +801,17 @@ const getRecentSubmissions = async (req, res, next) => {
           percent: {
             $cond: [
               { $gt: ["$totalMaxScore", 0] },
-              { $round: [{ $multiply: [{ $divide: ["$totalScore", "$totalMaxScore"] }, 100] }, 1] },
+              {
+                $round: [
+                  {
+                    $multiply: [
+                      { $divide: ["$totalScore", "$totalMaxScore"] },
+                      100,
+                    ],
+                  },
+                  1,
+                ],
+              },
               0,
             ],
           },
@@ -763,7 +826,11 @@ const getRecentSubmissions = async (req, res, next) => {
 
     const result = grouped.map((entry) => ({
       _id: String(entry._id),
-      student: entry.student || { name: "Unknown Student", email: "", studentCredential: "" },
+      student: entry.student || {
+        name: "Unknown Student",
+        email: "",
+        studentCredential: "",
+      },
       totalScore: entry.totalScore || 0,
       totalMaxScore: entry.totalMaxScore || 0,
       totalAttempted: entry.totalAttempted || 0,
@@ -782,7 +849,6 @@ const getRecentSubmissions = async (req, res, next) => {
     return next(error);
   }
 };
-
 
 const getInsights = async (req, res, next) => {
   try {
@@ -970,9 +1036,16 @@ const getInsights = async (req, res, next) => {
   }
 };
 
-const createSubmissionFromSession = async (session, remark, progressMeta = {}) => {
+const createSubmissionFromSession = async (
+  session,
+  remark,
+  progressMeta = {},
+) => {
   const answerMap = new Map(
-    (session.progressAnswers || []).map((item) => [String(item.question), item.selectedOptionIndex]),
+    (session.progressAnswers || []).map((item) => [
+      String(item.question),
+      item.selectedOptionIndex,
+    ]),
   );
 
   let attemptedQuestions = 0;
@@ -985,7 +1058,8 @@ const createSubmissionFromSession = async (session, remark, progressMeta = {}) =
       ? answerMap.get(questionId)
       : null;
 
-    const attempted = selectedShuffledIndex !== null && selectedShuffledIndex !== undefined;
+    const attempted =
+      selectedShuffledIndex !== null && selectedShuffledIndex !== undefined;
     if (attempted) {
       attemptedQuestions += 1;
     }
@@ -1081,7 +1155,8 @@ const getExamConfig = async (req, res, next) => {
 const updateExamConfig = async (req, res, next) => {
   try {
     const tenantAdmin = resolveTenantForAdminRequest(req);
-    const { durationInMinutes, examinerName, startAt, autoSubmitAfterTime } = req.body;
+    const { durationInMinutes, examinerName, startAt, autoSubmitAfterTime } =
+      req.body;
 
     let parsedStartAt = null;
     if (startAt) {
@@ -1089,7 +1164,7 @@ const updateExamConfig = async (req, res, next) => {
       if (Number.isNaN(parsedStartAt.getTime())) {
         return res.status(400).json({
           success: false,
-          message: 'startAt must be a valid ISO date string',
+          message: "startAt must be a valid ISO date string",
         });
       }
     }
@@ -1101,7 +1176,8 @@ const updateExamConfig = async (req, res, next) => {
         durationInMinutes,
         startAt: parsedStartAt,
         forceEndedAt: null,
-        autoSubmitAfterTime: typeof autoSubmitAfterTime === 'boolean' ? autoSubmitAfterTime : true,
+        autoSubmitAfterTime:
+          typeof autoSubmitAfterTime === "boolean" ? autoSubmitAfterTime : true,
         examinerName:
           typeof examinerName === "string" && examinerName.trim()
             ? examinerName.trim()
@@ -1152,12 +1228,17 @@ const forceEndExam = async (req, res, next) => {
       },
     );
 
-    const activeSessions = await ExamSession.find({ tenantAdmin, isSubmitted: false });
+    const activeSessions = await ExamSession.find({
+      tenantAdmin,
+      isSubmitted: false,
+    });
     let processedCount = 0;
 
     for (const session of activeSessions) {
       const hasAnyAnswer = (session.progressAnswers || []).some(
-        (item) => item.selectedOptionIndex !== null && item.selectedOptionIndex !== undefined,
+        (item) =>
+          item.selectedOptionIndex !== null &&
+          item.selectedOptionIndex !== undefined,
       );
 
       session.isSubmitted = true;
@@ -1166,7 +1247,7 @@ const forceEndExam = async (req, res, next) => {
       if (hasAnyAnswer) {
         await createSubmissionFromSession(
           session,
-          'Auto-submitted due to exam being ended by admin.',
+          "Auto-submitted due to exam being ended by admin.",
           session.progressMeta || {},
         );
         processedCount += 1;
@@ -1177,7 +1258,7 @@ const forceEndExam = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Exam was ended and active student sessions were finalized.',
+      message: "Exam was ended and active student sessions were finalized.",
       data: {
         forceEndedAt: config.forceEndedAt,
         activeSessionCount: activeSessions.length,
@@ -1483,7 +1564,9 @@ const getManagedAdmins = async (req, res, next) => {
       },
       {
         $addFields: {
-          studentCount: { $ifNull: [{ $arrayElemAt: ["$studentStats.count", 0] }, 0] },
+          studentCount: {
+            $ifNull: [{ $arrayElemAt: ["$studentStats.count", 0] }, 0],
+          },
           studentLimit: { $ifNull: ["$studentLimit", 0] },
         },
       },
@@ -1559,19 +1642,18 @@ const createManagedAdmin = async (req, res, next) => {
       tenantKey,
     }).select("_id");
     if (tenantExists) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Organization code is already in use.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Organization code is already in use.",
+      });
     }
 
-    const studentLimit = rawStudentLimit !== undefined
-      ? (Number.isInteger(rawStudentLimit)
-        ? rawStudentLimit
-        : parseInt(rawStudentLimit, 10))
-      : 100;
+    const studentLimit =
+      rawStudentLimit !== undefined
+        ? Number.isInteger(rawStudentLimit)
+          ? rawStudentLimit
+          : parseInt(rawStudentLimit, 10)
+        : 100;
 
     const admin = await User.create({
       name,
