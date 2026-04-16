@@ -158,6 +158,14 @@ router.put(
       .optional()
       .isBoolean()
       .withMessage("autoSubmitAfterTime must be boolean."),
+    body("calculatorEnabled")
+      .optional()
+      .isBoolean()
+      .withMessage("calculatorEnabled must be boolean."),
+    body("activeCalculatorType")
+      .optional({ nullable: true })
+      .isIn(["Simple", "Scientific ES991", "Scientific ES82", "Financial"])
+      .withMessage("activeCalculatorType must be one of the calculator types or null."),
     validateRequest,
   ],
   updateExamConfig,

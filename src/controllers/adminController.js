@@ -1114,6 +1114,9 @@ const createSubmissionFromSession = async (
       questionInteractions: Array.isArray(progressMeta.questionInteractions)
         ? progressMeta.questionInteractions
         : [],
+      securityEvents: Array.isArray(progressMeta.securityEvents)
+        ? progressMeta.securityEvents
+        : [],
     },
   });
 
@@ -1144,6 +1147,8 @@ const getExamConfig = async (req, res, next) => {
         startAt: config.startAt || null,
         forceEndedAt: config.forceEndedAt || null,
         autoSubmitAfterTime: config.autoSubmitAfterTime,
+        calculatorEnabled: config.calculatorEnabled ?? false,
+        activeCalculatorType: config.activeCalculatorType || null,
         updatedAt: config.updatedAt,
       },
     });
@@ -1155,7 +1160,7 @@ const getExamConfig = async (req, res, next) => {
 const updateExamConfig = async (req, res, next) => {
   try {
     const tenantAdmin = resolveTenantForAdminRequest(req);
-    const { durationInMinutes, examinerName, startAt, autoSubmitAfterTime } =
+    const { durationInMinutes, examinerName, startAt, autoSubmitAfterTime, calculatorEnabled, activeCalculatorType } =
       req.body;
 
     let parsedStartAt = null;
@@ -1178,6 +1183,12 @@ const updateExamConfig = async (req, res, next) => {
         forceEndedAt: null,
         autoSubmitAfterTime:
           typeof autoSubmitAfterTime === "boolean" ? autoSubmitAfterTime : true,
+        calculatorEnabled:
+          typeof calculatorEnabled === "boolean" ? calculatorEnabled : false,
+        activeCalculatorType:
+          typeof activeCalculatorType === "string" && ['Simple', 'Scientific ES991', 'Scientific ES82', 'Financial'].includes(activeCalculatorType)
+            ? activeCalculatorType
+            : null,
         examinerName:
           typeof examinerName === "string" && examinerName.trim()
             ? examinerName.trim()
@@ -1201,6 +1212,8 @@ const updateExamConfig = async (req, res, next) => {
         startAt: config.startAt || null,
         forceEndedAt: config.forceEndedAt || null,
         autoSubmitAfterTime: config.autoSubmitAfterTime,
+        calculatorEnabled: config.calculatorEnabled ?? false,
+        activeCalculatorType: config.activeCalculatorType || null,
         updatedAt: config.updatedAt,
       },
     });

@@ -62,6 +62,24 @@ const interactionSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const securityEventSchema = new mongoose.Schema(
+  {
+    type: {
+      type: String,
+      required: true,
+    },
+    message: {
+      type: String,
+      default: "",
+    },
+    timestamp: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false },
+);
+
 const examMetaSchema = new mongoose.Schema(
   {
     terminatedDueToCheating: {
@@ -82,6 +100,10 @@ const examMetaSchema = new mongoose.Schema(
     },
     questionInteractions: {
       type: [interactionSchema],
+      default: [],
+    },
+    securityEvents: {
+      type: [securityEventSchema],
       default: [],
     },
   },

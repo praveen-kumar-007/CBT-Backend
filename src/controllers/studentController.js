@@ -324,6 +324,17 @@ const saveExamProgress = async (req, res, next) => {
       return normalized;
     };
 
+    const normalizeSecurityEvents = (rawEvents) => {
+      if (!Array.isArray(rawEvents)) return session.progressMeta?.securityEvents || [];
+      return rawEvents
+        .filter((event) => event && typeof event.type === "string")
+        .map((event) => ({
+          type: event.type,
+          message: typeof event.message === "string" ? event.message : String(event.message || ""),
+          timestamp: event.timestamp ? new Date(event.timestamp) : new Date(),
+        }));
+    };
+
     session.progressMeta = {
       terminatedDueToCheating:
         Boolean(examMeta?.terminatedDueToCheating) ||
@@ -340,6 +351,9 @@ const saveExamProgress = async (req, res, next) => {
         : session.progressMeta?.totalOptionChanges || 0,
       questionInteractions: normalizeQuestionInteractions(
         examMeta?.questionInteractions || session.progressMeta?.questionInteractions,
+      ),
+      securityEvents: normalizeSecurityEvents(
+        examMeta?.securityEvents || session.progressMeta?.securityEvents,
       ),
     };
 
@@ -620,6 +634,8 @@ const getExamConfigForStudent = async (req, res, next) => {
           typeof config?.autoSubmitAfterTime === "boolean"
             ? config.autoSubmitAfterTime
             : true,
+        calculatorEnabled: config?.calculatorEnabled ?? false,
+        activeCalculatorType: config?.activeCalculatorType || null,
       },
     });
   } catch (error) {

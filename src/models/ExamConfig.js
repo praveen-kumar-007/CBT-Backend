@@ -26,6 +26,15 @@ const examConfigSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    calculatorEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    activeCalculatorType: {
+      type: String,
+      enum: ['Simple', 'Scientific ES991', 'Scientific ES82', 'Financial'],
+      default: null,
+    },
     examinerName: {
       type: String,
       trim: true,
