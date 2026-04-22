@@ -38,9 +38,20 @@ const toOriginalOptionIndex = (servedQuestion, shuffledIndex) => {
 const getSectionsForStudents = async (req, res, next) => {
   try {
     const tenantAdmin = getTenantAdminFromUser(req.user);
-    const sections = await Section.find({ tenantAdmin, isActive: true }).sort({
-      createdAt: 1,
-    });
+    const isDemoGuest = req.user?.studentCredential === "demo-guest";
+    const completedSectionIds = isDemoGuest
+      ? []
+      : await Submission.distinct("section", {
+          tenantAdmin,
+          student: req.user._id,
+        });
+
+    const sections = await Section.find({
+      tenantAdmin,
+      isActive: true,
+      _id: isDemoGuest ? { $exists: true } : { $nin: completedSectionIds },
+    }).sort({ createdAt: 1 });
+
     return res.status(200).json({ success: true, data: sections });
   } catch (error) {
     return next(error);
@@ -69,6 +80,20 @@ const getQuestionsForStudent = async (req, res, next) => {
         .json({ success: false, message: "Section not found or inactive." });
     }
 
+    const isDemoGuest = req.user?.studentCredential === "demo-guest";
+    const alreadySubmitted = await Submission.exists({
+      tenantAdmin,
+      student: req.user._id,
+      section: sectionId,
+    });
+    if (alreadySubmitted && !isDemoGuest) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "This section has already been submitted and cannot be retaken unless an administrator removes the completed response.",
+      });
+    }
+
     const config = await ExamConfig.findOne({ tenantAdmin });
     const now = new Date();
     if (config?.startAt && now < config.startAt) {
@@ -91,37 +116,74 @@ const getQuestionsForStudent = async (req, res, next) => {
       section: sectionId,
     });
 
+    let isRetakeAllowanceActive = false;
     if (existingSession) {
       if (existingSession.isSubmitted) {
-        return res.status(400).json({
-          success: false,
-          message: "You have already submitted this section.",
+        if (
+          existingSession.reentryExpiresAt &&
+          existingSession.reentryExpiresAt > now
+        ) {
+          isRetakeAllowanceActive = true;
+          await ExamSession.deleteOne({ _id: existingSession._id });
+        } else if (isDemoGuest) {
+          await Promise.all([
+            Submission.deleteMany({
+              tenantAdmin,
+              student: req.user._id,
+              section: sectionId,
+            }),
+            ExamSession.deleteOne({ _id: existingSession._id }),
+          ]);
+        } else {
+          return res.status(400).json({
+            success: false,
+            message: existingSession.reentryExpiresAt
+              ? "The retake window has closed for this section. Contact your administrator."
+              : "You have already submitted this section.",
+          });
+        }
+      } else {
+        return res.status(200).json({
+          success: true,
+          data: {
+            section,
+            sessionId: existingSession._id,
+            questions: existingSession.servedQuestions.map((q) => ({
+              id: String(q.question),
+              questionText: q.questionText,
+              options: q.shuffledOptions,
+              marks: q.marks,
+              imageUrl: q.imageUrl,
+            })),
+            progressAnswers: (existingSession.progressAnswers || []).map(
+              (item) => ({
+                questionId: String(item.question),
+                selectedOptionIndex:
+                  item.selectedOptionIndex !== undefined
+                    ? item.selectedOptionIndex
+                    : null,
+              }),
+            ),
+          },
         });
       }
+    }
 
-      return res.status(200).json({
-        success: true,
-        data: {
-          section,
-          sessionId: existingSession._id,
-          questions: existingSession.servedQuestions.map((q) => ({
-            id: String(q.question),
-            questionText: q.questionText,
-            options: q.shuffledOptions,
-            marks: q.marks,
-            imageUrl: q.imageUrl,
-          })),
-          progressAnswers: (existingSession.progressAnswers || []).map(
-            (item) => ({
-              questionId: String(item.question),
-              selectedOptionIndex:
-                item.selectedOptionIndex !== undefined
-                  ? item.selectedOptionIndex
-                  : null,
-            }),
-          ),
-        },
-      });
+    if (
+      !isRetakeAllowanceActive &&
+      config?.startAt &&
+      Number.isInteger(config.officialEntryWindowInMinutes)
+    ) {
+      const entryWindowEnd = new Date(
+        config.startAt.getTime() +
+          config.officialEntryWindowInMinutes * 60 * 1000,
+      );
+      if (now > entryWindowEnd) {
+        return res.status(403).json({
+          success: false,
+          message: `Exam entry is only permitted within ${config.officialEntryWindowInMinutes} minutes of the scheduled start time. Contact your administrator for assistance.`,
+        });
+      }
     }
 
     const questionDocs = await Question.find({
@@ -273,7 +335,9 @@ const saveExamProgress = async (req, res, next) => {
       }
 
       for (const interaction of rawInteractions) {
-        const questionId = String(interaction?.questionId || interaction?.question || "");
+        const questionId = String(
+          interaction?.questionId || interaction?.question || "",
+        );
         if (!questionId || seenQuestionIds.has(questionId)) {
           continue;
         }
@@ -337,7 +401,10 @@ const saveExamProgress = async (req, res, next) => {
         .filter((event) => event && typeof event.type === "string")
         .map((event) => ({
           type: event.type,
-          message: typeof event.message === "string" ? event.message : String(event.message || ""),
+          message:
+            typeof event.message === "string"
+              ? event.message
+              : String(event.message || ""),
           timestamp: event.timestamp ? new Date(event.timestamp) : new Date(),
         }));
 
@@ -359,7 +426,8 @@ const saveExamProgress = async (req, res, next) => {
         ? examMeta.totalOptionChanges
         : session.progressMeta?.totalOptionChanges || 0,
       questionInteractions: normalizeQuestionInteractions(
-        examMeta?.questionInteractions || session.progressMeta?.questionInteractions,
+        examMeta?.questionInteractions ||
+          session.progressMeta?.questionInteractions,
       ),
       securityEvents: normalizeSecurityEvents(
         Array.isArray(examMeta?.securityEvents)
@@ -662,6 +730,16 @@ const getExamConfigForStudent = async (req, res, next) => {
       success: true,
       data: {
         durationInMinutes: config?.durationInMinutes || 60,
+        officialEntryWindowInMinutes: Number.isInteger(
+          config?.officialEntryWindowInMinutes,
+        )
+          ? config.officialEntryWindowInMinutes
+          : 30,
+        sectionReentryWindowInMinutes: Number.isInteger(
+          config?.sectionReentryWindowInMinutes,
+        )
+          ? config.sectionReentryWindowInMinutes
+          : 15,
         examinerName: config?.examinerName || "CBT Examination Cell",
         startAt: config?.startAt || null,
         forceEndedAt: config?.forceEndedAt || null,

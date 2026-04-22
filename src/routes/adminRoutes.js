@@ -27,7 +27,13 @@ const {
   createManagedAdmin,
   updateManagedAdmin,
   deleteManagedAdmin,
+  createStudent,
+  updateStudent,
+  deleteSubmission,
+  deleteStudentResponses,
+  deleteAllResponses,
   createAdditionalSuperAdmin,
+  importStudentsFromExcel,
   importQuestionsFromExcel,
 } = require("../controllers/adminController");
 const { protect, allowRoles } = require("../middlewares/authMiddleware");
@@ -86,6 +92,10 @@ router.put(
       .optional()
       .isInt({ min: 1 })
       .withMessage("studentLimit must be an integer greater than 0."),
+    body("existingStudentOnlyAccess")
+      .optional()
+      .isBoolean()
+      .withMessage("existingStudentOnlyAccess must be a boolean."),
     validateRequest,
   ],
   updateManagedAdmin,
@@ -137,6 +147,7 @@ router.get(
   adminExportRateLimit,
   exportAllSubmissionsDetailedCsv,
 );
+router.delete("/submissions/reset-all", deleteAllResponses);
 router.get("/exam-config", getExamConfig);
 
 router.put(
@@ -162,16 +173,30 @@ router.put(
       .optional()
       .isBoolean()
       .withMessage("calculatorEnabled must be boolean."),
+    body("officialEntryWindowInMinutes")
+      .optional()
+      .isInt({ min: 1, max: 1440 })
+      .withMessage(
+        "officialEntryWindowInMinutes must be an integer between 1 and 1440.",
+      ),
+    body("sectionReentryWindowInMinutes")
+      .optional()
+      .isInt({ min: 1, max: 1440 })
+      .withMessage(
+        "sectionReentryWindowInMinutes must be an integer between 1 and 1440.",
+      ),
     body("activeCalculatorType")
       .optional({ nullable: true })
       .isIn(["Simple", "Scientific ES991", "Scientific ES82", "Financial"])
-      .withMessage("activeCalculatorType must be one of the calculator types or null."),
+      .withMessage(
+        "activeCalculatorType must be one of the calculator types or null.",
+      ),
     validateRequest,
   ],
   updateExamConfig,
 );
 
-router.post('/exam-config/end', forceEndExam);
+router.post("/exam-config/end", forceEndExam);
 
 router.post(
   "/sections",
@@ -281,6 +306,50 @@ router.delete(
   deleteQuestion,
 );
 
+router.post(
+  "/students",
+  [
+    body("name").notEmpty().withMessage("Student name is required."),
+    body("email").isEmail().withMessage("Valid student email is required."),
+    body("studentCredential")
+      .notEmpty()
+      .withMessage("Student credential is required."),
+    body("password").optional().isString(),
+    validateRequest,
+  ],
+  createStudent,
+);
+
+router.post(
+  "/students/import",
+  upload.single("studentFile"),
+  importStudentsFromExcel,
+);
+
+router.delete(
+  "/students/:studentId/submissions",
+  [
+    param("studentId").isMongoId().withMessage("Valid student id is required."),
+    validateRequest,
+  ],
+  deleteStudentResponses,
+);
+
+router.put(
+  "/students/:studentId",
+  [
+    param("studentId").isMongoId().withMessage("Valid student id is required."),
+    body("name").notEmpty().withMessage("Student name is required."),
+    body("email").isEmail().withMessage("Valid student email is required."),
+    body("studentCredential")
+      .notEmpty()
+      .withMessage("Student credential is required."),
+    body("password").optional().isString(),
+    validateRequest,
+  ],
+  updateStudent,
+);
+
 router.get("/students", getAllStudents);
 
 router.delete("/students/reset-all", resetAllStudentsData);
@@ -292,6 +361,17 @@ router.get(
     validateRequest,
   ],
   getStudentSubmissions,
+);
+
+router.delete(
+  "/submissions/:submissionId",
+  [
+    param("submissionId")
+      .isMongoId()
+      .withMessage("Valid submission id is required."),
+    validateRequest,
+  ],
+  deleteSubmission,
 );
 
 router.get(

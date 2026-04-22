@@ -168,6 +168,10 @@ const examSessionSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    reentryExpiresAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

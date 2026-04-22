@@ -369,12 +369,10 @@ const importQuestionsFromExcel = async (req, res, next) => {
 
     const rows = workbookToQuestionRows(req.file.buffer);
     if (!rows.length) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "No valid question rows found in the Excel file.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "No valid question rows found in the Excel file.",
+      });
     }
 
     const sectionCache = new Map();
@@ -410,12 +408,10 @@ const importQuestionsFromExcel = async (req, res, next) => {
     }
 
     if (!questionsToCreate.length) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "No valid questions could be imported from the Excel file.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "No valid questions could be imported from the Excel file.",
+      });
     }
 
     const createdQuestions = await Question.insertMany(questionsToCreate, {
@@ -426,6 +422,274 @@ const importQuestionsFromExcel = async (req, res, next) => {
       success: true,
       message: `${createdQuestions.length} question(s) imported successfully from Excel.`,
       data: { importedCount: createdQuestions.length },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const workbookToStudentRows = (buffer) => {
+  const workbook = XLSX.read(buffer, { type: "buffer" });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  if (!sheet) {
+    return [];
+  }
+
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return [];
+  }
+
+  const headerRow = (rows[0] || []).map((cell) =>
+    String(cell || "")
+      .trim()
+      .toLowerCase(),
+  );
+  const hasHeader = headerRow.some((header) =>
+    [
+      "name",
+      "email",
+      "student credential",
+      "studentcredential",
+      "credential",
+      "password",
+    ].includes(header),
+  );
+
+  const normalizedHeaders = headerRow.map((header) =>
+    header.replace(/\s+/g, ""),
+  );
+  const nameIndex = normalizedHeaders.indexOf("name");
+  const emailIndex = normalizedHeaders.indexOf("email");
+  const credentialIndex = normalizedHeaders.findIndex((header) =>
+    ["studentcredential", "studentcredential", "credential"].includes(header),
+  );
+  const passwordIndex = normalizedHeaders.indexOf("password");
+
+  const output = [];
+
+  for (
+    let rowIndex = hasHeader ? 1 : 0;
+    rowIndex < rows.length;
+    rowIndex += 1
+  ) {
+    const row = rows[rowIndex];
+    if (!Array.isArray(row)) {
+      continue;
+    }
+
+    const name = String(row[nameIndex] || row[0] || "").trim();
+    const email = String(row[emailIndex] || row[1] || "").trim();
+    const studentCredential = String(
+      row[credentialIndex] || row[2] || "",
+    ).trim();
+    const password = String(row[passwordIndex] || row[3] || "").trim();
+
+    if (!name || !email || !studentCredential) {
+      continue;
+    }
+
+    output.push({
+      name,
+      email,
+      studentCredential,
+      password,
+    });
+  }
+
+  return output;
+};
+
+const importStudentsFromExcel = async (req, res, next) => {
+  try {
+    const tenantAdminId = resolveTenantForAdminRequest(req);
+    const tenantAdmin = await User.findOne({
+      _id: tenantAdminId,
+      role: "admin",
+    });
+    if (!tenantAdmin) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Organization admin not found." });
+    }
+
+    if (!req.file) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Excel file is required." });
+    }
+
+    const rows = workbookToStudentRows(req.file.buffer);
+    if (!rows.length) {
+      return res.status(400).json({
+        success: false,
+        message: "No valid student rows found in the Excel file.",
+      });
+    }
+
+    const totalRows = rows.length;
+    const currentCount = await User.countDocuments({
+      role: "student",
+      tenantAdmin: tenantAdminId,
+    });
+    const studentLimit =
+      tenantAdmin.studentLimit > 0 ? tenantAdmin.studentLimit : 100;
+    const availableSeats = Math.max(0, studentLimit - currentCount);
+    if (availableSeats <= 0) {
+      return res.status(403).json({
+        success: false,
+        message: `Student seat limit reached (${studentLimit}). Import cannot proceed until seats are freed.`,
+      });
+    }
+
+    const seenCredentials = new Set();
+    const studentsToCreate = [];
+
+    for (const row of rows) {
+      if (studentsToCreate.length >= availableSeats) {
+        break;
+      }
+
+      const normalizedEmail = String(row.email).toLowerCase().trim();
+      const normalizedCredential = String(row.studentCredential).trim();
+
+      if (!normalizedEmail || !normalizedCredential) {
+        continue;
+      }
+
+      if (seenCredentials.has(normalizedCredential)) {
+        continue;
+      }
+
+      const existingCredential = await User.exists({
+        role: "student",
+        tenantAdmin,
+        studentCredential: normalizedCredential,
+      });
+      if (existingCredential) {
+        continue;
+      }
+
+      seenCredentials.add(normalizedCredential);
+
+      studentsToCreate.push({
+        name: row.name,
+        email: normalizedEmail,
+        password: row.password || row.name,
+        studentCredential: normalizedCredential,
+        role: "student",
+        tenantAdmin: tenantAdminId,
+        createdBy: req.user._id,
+      });
+    }
+
+    if (!studentsToCreate.length) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "No valid student records could be imported from the Excel file.",
+      });
+    }
+
+    const createdStudents = await User.insertMany(studentsToCreate, {
+      ordered: false,
+    });
+    const importedCount = createdStudents.length;
+    const truncatedBySeatLimit = totalRows > availableSeats;
+    const message = truncatedBySeatLimit
+      ? `${importedCount} student(s) imported successfully from Excel. Only the first ${availableSeats} valid rows were imported because the organization has a ${studentLimit}-student seat limit and ${currentCount} seats were already used.`
+      : `${importedCount} student(s) imported successfully from Excel.`;
+
+    return res.status(201).json({
+      success: true,
+      message,
+      data: {
+        importedCount,
+        totalRows,
+        availableSeats,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const updateStudent = async (req, res, next) => {
+  try {
+    const tenantAdmin = resolveTenantForAdminRequest(req);
+    const { studentId } = req.params;
+    const { name, email, studentCredential, password: rawPassword } = req.body;
+
+    if (!name || !String(name).trim()) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Student name is required." });
+    }
+
+    if (!email || !String(email).trim()) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Student email is required." });
+    }
+
+    if (!studentCredential || !String(studentCredential).trim()) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Student credential is required." });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(studentId)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid student id." });
+    }
+
+    const student = await User.findOne({
+      _id: studentId,
+      role: "student",
+      tenantAdmin,
+    });
+    if (!student) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Student not found." });
+    }
+
+    const normalizedEmail = String(email).toLowerCase().trim();
+    const normalizedCredential = String(studentCredential).trim();
+
+    if (normalizedCredential !== student.studentCredential) {
+      const existingCredential = await User.exists({
+        role: "student",
+        tenantAdmin,
+        studentCredential: normalizedCredential,
+      });
+      if (existingCredential) {
+        return res.status(400).json({
+          success: false,
+          message: "A student with this credential already exists.",
+        });
+      }
+    }
+
+    student.name = String(name).trim();
+    student.email = normalizedEmail;
+    student.studentCredential = normalizedCredential;
+    if (rawPassword && String(rawPassword).trim()) {
+      student.password = String(rawPassword).trim();
+    }
+
+    await student.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Student updated successfully.",
+      data: {
+        _id: student._id,
+        name: student.name,
+        email: student.email,
+        studentCredential: student.studentCredential,
+      },
     });
   } catch (error) {
     return next(error);
@@ -590,6 +854,113 @@ const getStudentSubmissions = async (req, res, next) => {
       data: {
         student,
         submissions,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const deleteSubmission = async (req, res, next) => {
+  try {
+    const tenantAdmin = resolveTenantForAdminRequest(req);
+    const { submissionId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(submissionId)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid submission id." });
+    }
+
+    const submission = await Submission.findOne({
+      _id: submissionId,
+      tenantAdmin,
+    });
+
+    if (!submission) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Submission not found." });
+    }
+
+    const sectionId = submission.section;
+    const studentId = submission.student;
+
+    const config = await ExamConfig.findOne({ tenantAdmin });
+    const reentryWindowMinutes =
+      Number.isInteger(config?.sectionReentryWindowInMinutes) &&
+      config.sectionReentryWindowInMinutes >= 1
+        ? config.sectionReentryWindowInMinutes
+        : 15;
+    const reentryExpiresAt = new Date(
+      Date.now() + reentryWindowMinutes * 60 * 1000,
+    );
+
+    await Promise.all([
+      submission.deleteOne(),
+      ExamSession.deleteMany({
+        tenantAdmin,
+        student: studentId,
+        section: sectionId,
+      }),
+    ]);
+
+    await ExamSession.create({
+      tenantAdmin,
+      student: studentId,
+      section: sectionId,
+      servedQuestions: [],
+      progressAnswers: [],
+      progressMeta: {},
+      isSubmitted: true,
+      submittedAt: new Date(),
+      reentryExpiresAt,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `Student submission deleted. The student can retake this section until ${reentryExpiresAt.toISOString()}.`,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const deleteStudentResponses = async (req, res, next) => {
+  try {
+    const tenantAdmin = resolveTenantForAdminRequest(req);
+    const { studentId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(studentId)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid student id." });
+    }
+
+    const student = await User.findOne({
+      _id: studentId,
+      role: "student",
+      tenantAdmin,
+    });
+
+    if (!student) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Student not found." });
+    }
+
+    const [deletedSubmissions, deletedSessions] = await Promise.all([
+      Submission.deleteMany({ tenantAdmin, student: studentId }),
+      ExamSession.deleteMany({ tenantAdmin, student: studentId }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "All student responses were deleted. The student may restart the exam immediately.",
+      data: {
+        deletedSubmissions: deletedSubmissions.deletedCount,
+        deletedSessions: deletedSessions.deletedCount,
       },
     });
   } catch (error) {
@@ -1148,6 +1519,8 @@ const getExamConfig = async (req, res, next) => {
       success: true,
       data: {
         durationInMinutes: config.durationInMinutes,
+        officialEntryWindowInMinutes: config.officialEntryWindowInMinutes,
+        sectionReentryWindowInMinutes: config.sectionReentryWindowInMinutes,
         examinerName: config.examinerName || "CBT Examination Cell",
         startAt: config.startAt || null,
         forceEndedAt: config.forceEndedAt || null,
@@ -1165,8 +1538,16 @@ const getExamConfig = async (req, res, next) => {
 const updateExamConfig = async (req, res, next) => {
   try {
     const tenantAdmin = resolveTenantForAdminRequest(req);
-    const { durationInMinutes, examinerName, startAt, autoSubmitAfterTime, calculatorEnabled, activeCalculatorType } =
-      req.body;
+    const {
+      durationInMinutes,
+      officialEntryWindowInMinutes,
+      sectionReentryWindowInMinutes,
+      examinerName,
+      startAt,
+      autoSubmitAfterTime,
+      calculatorEnabled,
+      activeCalculatorType,
+    } = req.body;
 
     let parsedStartAt = null;
     if (startAt) {
@@ -1179,11 +1560,23 @@ const updateExamConfig = async (req, res, next) => {
       }
     }
 
+    const existingConfig = await ExamConfig.findOne({ tenantAdmin });
+
     const config = await ExamConfig.findOneAndUpdate(
       { tenantAdmin },
       {
         tenantAdmin,
         durationInMinutes,
+        officialEntryWindowInMinutes:
+          Number.isInteger(officialEntryWindowInMinutes) &&
+          officialEntryWindowInMinutes >= 1
+            ? officialEntryWindowInMinutes
+            : (existingConfig?.officialEntryWindowInMinutes ?? 30),
+        sectionReentryWindowInMinutes:
+          Number.isInteger(sectionReentryWindowInMinutes) &&
+          sectionReentryWindowInMinutes >= 1
+            ? sectionReentryWindowInMinutes
+            : (existingConfig?.sectionReentryWindowInMinutes ?? 15),
         startAt: parsedStartAt,
         forceEndedAt: null,
         autoSubmitAfterTime:
@@ -1191,7 +1584,13 @@ const updateExamConfig = async (req, res, next) => {
         calculatorEnabled:
           typeof calculatorEnabled === "boolean" ? calculatorEnabled : false,
         activeCalculatorType:
-          typeof activeCalculatorType === "string" && ['Simple', 'Scientific ES991', 'Scientific ES82', 'Financial'].includes(activeCalculatorType)
+          typeof activeCalculatorType === "string" &&
+          [
+            "Simple",
+            "Scientific ES991",
+            "Scientific ES82",
+            "Financial",
+          ].includes(activeCalculatorType)
             ? activeCalculatorType
             : null,
         examinerName:
@@ -1213,6 +1612,8 @@ const updateExamConfig = async (req, res, next) => {
       message: "Exam configuration updated successfully.",
       data: {
         durationInMinutes: config.durationInMinutes,
+        officialEntryWindowInMinutes: config.officialEntryWindowInMinutes,
+        sectionReentryWindowInMinutes: config.sectionReentryWindowInMinutes,
         examinerName: config.examinerName || "CBT Examination Cell",
         startAt: config.startAt || null,
         forceEndedAt: config.forceEndedAt || null,
@@ -1554,6 +1955,28 @@ const resetAllStudentsData = async (req, res, next) => {
   }
 };
 
+const deleteAllResponses = async (req, res, next) => {
+  try {
+    const tenantAdmin = resolveTenantForAdminRequest(req);
+
+    const [submissionResult, sessionResult] = await Promise.all([
+      Submission.deleteMany({ tenantAdmin }),
+      ExamSession.deleteMany({ tenantAdmin }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: "All student responses were deleted successfully.",
+      data: {
+        deletedSubmissions: submissionResult.deletedCount || 0,
+        deletedSessions: sessionResult.deletedCount || 0,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const getManagedAdmins = async (req, res, next) => {
   try {
     ensureSuperAdmin(req);
@@ -1586,6 +2009,9 @@ const getManagedAdmins = async (req, res, next) => {
             $ifNull: [{ $arrayElemAt: ["$studentStats.count", 0] }, 0],
           },
           studentLimit: { $ifNull: ["$studentLimit", 0] },
+          existingStudentOnlyAccess: {
+            $ifNull: ["$existingStudentOnlyAccess", false],
+          },
         },
       },
       {
@@ -1597,6 +2023,7 @@ const getManagedAdmins = async (req, res, next) => {
           createdAt: 1,
           studentLimit: 1,
           studentCount: 1,
+          existingStudentOnlyAccess: 1,
           createdBy: 1,
         },
       },
@@ -1729,12 +2156,108 @@ const deleteManagedAdmin = async (req, res, next) => {
   }
 };
 
+const createStudent = async (req, res, next) => {
+  try {
+    const tenantAdminId = resolveTenantForAdminRequest(req);
+    const tenantAdmin = await User.findOne({
+      _id: tenantAdminId,
+      role: "admin",
+    });
+    if (!tenantAdmin) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Organization admin not found." });
+    }
+
+    const { name, email, studentCredential, password: rawPassword } = req.body;
+
+    if (!name || !String(name).trim()) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Student name is required." });
+    }
+
+    if (!email || !String(email).trim()) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Student email is required." });
+    }
+
+    if (!studentCredential || !String(studentCredential).trim()) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Student credential is required." });
+    }
+
+    const normalizedEmail = String(email).toLowerCase().trim();
+    const normalizedCredential = String(studentCredential).trim();
+
+    const existingCredential = await User.findOne({
+      role: "student",
+      tenantAdmin: tenantAdminId,
+      studentCredential: normalizedCredential,
+    });
+    if (existingCredential) {
+      return res.status(400).json({
+        success: false,
+        message: "A student with this credential already exists.",
+      });
+    }
+
+    const currentCount = await User.countDocuments({
+      role: "student",
+      tenantAdmin: tenantAdminId,
+    });
+    const studentLimit =
+      tenantAdmin.studentLimit > 0 ? tenantAdmin.studentLimit : 100;
+    if (currentCount >= studentLimit) {
+      return res.status(403).json({
+        success: false,
+        message: `Student seat limit reached (${studentLimit}). Contact your administrator for more seats.`,
+      });
+    }
+
+    const student = await User.create({
+      name: String(name).trim(),
+      email: normalizedEmail,
+      password: rawPassword || String(name).trim(),
+      studentCredential: normalizedCredential,
+      role: "student",
+      tenantAdmin: tenantAdminId,
+      createdBy: req.user._id,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Student created successfully.",
+      data: {
+        _id: student._id,
+        name: student.name,
+        email: student.email,
+        studentCredential: student.studentCredential,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const updateManagedAdmin = async (req, res, next) => {
   try {
-    ensureSuperAdmin(req);
-
     const { adminId } = req.params;
-    const { studentLimit: rawStudentLimit } = req.body;
+    const { studentLimit: rawStudentLimit, existingStudentOnlyAccess } =
+      req.body;
+
+    if (
+      req.user.role !== "super_admin" &&
+      String(req.user._id) !== String(adminId)
+    ) {
+      const error = new Error(
+        "Only super admins can update other organizations. Admins may update settings for their own organization only.",
+      );
+      error.statusCode = 403;
+      throw error;
+    }
 
     const admin = await User.findOne({
       _id: adminId,
@@ -1762,6 +2285,10 @@ const updateManagedAdmin = async (req, res, next) => {
       admin.studentLimit = studentLimit;
     }
 
+    if (existingStudentOnlyAccess !== undefined) {
+      admin.existingStudentOnlyAccess = Boolean(existingStudentOnlyAccess);
+    }
+
     await admin.save();
 
     return res.status(200).json({
@@ -1770,6 +2297,7 @@ const updateManagedAdmin = async (req, res, next) => {
       data: {
         id: admin._id,
         studentLimit: admin.studentLimit || 0,
+        existingStudentOnlyAccess: admin.existingStudentOnlyAccess,
       },
     });
   } catch (error) {
@@ -1830,6 +2358,7 @@ module.exports = {
   getStudentSubmissions,
   deleteStudent,
   resetAllStudentsData,
+  deleteAllResponses,
   getAnalytics,
   getInsights,
   getRecentSubmissions,
@@ -1843,6 +2372,11 @@ module.exports = {
   createManagedAdmin,
   updateManagedAdmin,
   deleteManagedAdmin,
+  createStudent,
+  updateStudent,
+  deleteSubmission,
+  deleteStudentResponses,
   createAdditionalSuperAdmin,
+  importStudentsFromExcel,
   importQuestionsFromExcel,
 };

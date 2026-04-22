@@ -62,6 +62,10 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    existingStudentOnlyAccess: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
@@ -81,7 +85,6 @@ userSchema.index(
 userSchema.index(
   { role: 1, tenantAdmin: 1, email: 1 },
   {
-    unique: true,
     partialFilterExpression: {
       role: "student",
     },

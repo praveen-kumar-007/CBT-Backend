@@ -5,17 +5,19 @@ const notFound = (req, res, next) => {
 };
 
 const errorHandler = (err, req, res, next) => {
-  let statusCode = res.statusCode && res.statusCode !== 200 ? res.statusCode : 500;
+  console.error("Backend error:", err);
+  let statusCode =
+    res.statusCode && res.statusCode !== 200 ? res.statusCode : 500;
   if (err.statusCode && Number.isInteger(err.statusCode)) {
     statusCode = err.statusCode;
   }
 
   const responsePayload = {
     success: false,
-    message: err.message || 'Internal server error',
+    message: err.message || "Internal server error",
   };
 
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== "production") {
     responsePayload.stack = err.stack;
   }
 
@@ -23,9 +25,9 @@ const errorHandler = (err, req, res, next) => {
     responsePayload.errors = err.errors;
   }
 
-  if (err.name === 'MulterError') {
+  if (err.name === "MulterError") {
     statusCode = 400;
-    responsePayload.message = err.message || 'File upload failed.';
+    responsePayload.message = err.message || "File upload failed.";
   }
 
   res.status(statusCode).json(responsePayload);
@@ -33,5 +35,5 @@ const errorHandler = (err, req, res, next) => {
 
 module.exports = {
   notFound,
-  errorHandler
+  errorHandler,
 };

@@ -14,6 +14,20 @@ const examConfigSchema = new mongoose.Schema(
       max: 600,
       default: 60,
     },
+    officialEntryWindowInMinutes: {
+      type: Number,
+      required: true,
+      min: 1,
+      max: 1440,
+      default: 30,
+    },
+    sectionReentryWindowInMinutes: {
+      type: Number,
+      required: true,
+      min: 1,
+      max: 1440,
+      default: 15,
+    },
     startAt: {
       type: Date,
       default: null,
@@ -32,7 +46,7 @@ const examConfigSchema = new mongoose.Schema(
     },
     activeCalculatorType: {
       type: String,
-      enum: ['Simple', 'Scientific ES991', 'Scientific ES82', 'Financial'],
+      enum: ["Simple", "Scientific ES991", "Scientific ES82", "Financial"],
       default: null,
     },
     examinerName: {

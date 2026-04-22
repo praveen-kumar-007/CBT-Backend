@@ -1,5 +1,7 @@
 const User = require("../models/User");
 const ExamSession = require("../models/ExamSession");
+const Submission = require("../models/Submission");
+const ExamConfig = require("../models/ExamConfig");
 const generateToken = require("../utils/generateToken");
 const { seedDemoPaper } = require("../utils/demoSeed");
 
@@ -46,6 +48,7 @@ const serializeUser = (user) => ({
   phone: user.phone || null,
   plan: user.plan || "Enterprise Business",
   studentLimit: user.studentLimit || 0,
+  existingStudentOnlyAccess: user.existingStudentOnlyAccess || false,
 });
 
 const registerSuperAdmin = async (req, res, next) => {
@@ -242,12 +245,21 @@ const registerStudent = async (req, res, next) => {
         .json({ success: false, message: "Invalid organization code." });
     }
 
+    if (tenantAdmin.existingStudentOnlyAccess) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "This organization only allows registered students to take exams. Contact your administrator to add a student account.",
+      });
+    }
+
     // Enforce Student Limit
     const currentCount = await User.countDocuments({
       role: "student",
       tenantAdmin: tenantAdmin._id,
     });
-    const studentLimit = tenantAdmin.studentLimit > 0 ? tenantAdmin.studentLimit : 100;
+    const studentLimit =
+      tenantAdmin.studentLimit > 0 ? tenantAdmin.studentLimit : 100;
     if (currentCount >= studentLimit) {
       return res.status(403).json({
         success: false,
@@ -262,12 +274,10 @@ const registerStudent = async (req, res, next) => {
     });
 
     if (existing) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Email already registered in this tenant.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Email already registered in this tenant.",
+      });
     }
 
     const student = await User.create({
@@ -384,6 +394,35 @@ const createStudentSession = async (req, res, next) => {
         .json({ success: false, message: "Invalid organization code." });
     }
 
+    const config = await ExamConfig.findOne({ tenantAdmin: tenantAdmin._id });
+    const now = new Date();
+
+    if (config?.startAt && now < config.startAt) {
+      return res.status(403).json({
+        success: false,
+        message: `Exam access opens at ${config.startAt.toISOString()}. Please try again after the scheduled start time.`,
+      });
+    }
+
+    if (config?.startAt) {
+      const entryDeadline = new Date(config.startAt.getTime() + 30 * 60 * 1000);
+      if (now > entryDeadline) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Exam entry has closed. Students may only start within 30 minutes after the scheduled exam start time.",
+        });
+      }
+    }
+
+    if (config?.forceEndedAt && now >= config.forceEndedAt) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "The scheduled exam period has ended. Contact your administrator for more information.",
+      });
+    }
+
     let student = await User.findOne({
       role: "student",
       tenantAdmin: tenantAdmin._id,
@@ -391,12 +430,21 @@ const createStudentSession = async (req, res, next) => {
     });
 
     if (!student) {
+      if (tenantAdmin.existingStudentOnlyAccess) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "This organization only allows registered students to start exams. Contact your administrator to enroll you.",
+        });
+      }
+
       // Enforce Student Limit for session-based auto-creation
       const currentCount = await User.countDocuments({
         role: "student",
         tenantAdmin: tenantAdmin._id,
       });
-      const studentLimit = tenantAdmin.studentLimit > 0 ? tenantAdmin.studentLimit : 100;
+      const studentLimit =
+        tenantAdmin.studentLimit > 0 ? tenantAdmin.studentLimit : 100;
       if (currentCount >= studentLimit) {
         return res.status(403).json({
           success: false,
@@ -413,7 +461,7 @@ const createStudentSession = async (req, res, next) => {
       student = await User.create({
         name: normalizedLoginId,
         email: generatedEmail,
-        password: password || `guest-${Date.now()}`,
+        password: password || normalizedLoginId,
         studentCredential: normalizedLoginId,
         role: "student",
         tenantAdmin: tenantAdmin._id,
@@ -446,7 +494,10 @@ const createDemoGuestSession = async (req, res, next) => {
       try {
         await seedDemoPaper();
       } catch (seedError) {
-        console.error('Demo paper seed failed during demo session request:', seedError);
+        console.error(
+          "Demo paper seed failed during demo session request:",
+          seedError,
+        );
       }
       demoAdmin = await User.findOne({ role: "admin", tenantKey: "demo" });
     }
@@ -476,7 +527,16 @@ const createDemoGuestSession = async (req, res, next) => {
         createdBy: demoAdmin._id,
       });
     } else {
-      await ExamSession.deleteMany({ student: student._id });
+      await Promise.all([
+        ExamSession.deleteMany({
+          tenantAdmin: demoAdmin._id,
+          student: student._id,
+        }),
+        Submission.deleteMany({
+          tenantAdmin: demoAdmin._id,
+          student: student._id,
+        }),
+      ]);
     }
 
     const token = generateToken(student);

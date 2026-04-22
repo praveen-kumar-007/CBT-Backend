@@ -12,6 +12,19 @@ const startServer = async () => {
   try {
     await connectDB();
 
+    const User = require("./models/User");
+    console.log("Cleaning up deprecated User indexes...");
+    const existingIndexes = await User.collection.indexes();
+    const legacyIndexName = "role_1_tenantAdmin_1_email_1";
+    if (existingIndexes.some((index) => index.name === legacyIndexName)) {
+      console.log(`Dropping legacy index ${legacyIndexName}`);
+      await User.collection.dropIndex(legacyIndexName);
+    }
+
+    console.log("Syncing User indexes...");
+    await User.syncIndexes();
+    console.log("User indexes synced.");
+
     const cloudinaryConfigured = configureCloudinary();
     if (!cloudinaryConfigured) {
       console.warn(
