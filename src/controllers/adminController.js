@@ -1510,6 +1510,7 @@ const getExamConfig = async (req, res, next) => {
         tenantAdmin,
         durationInMinutes: 60,
         autoSubmitAfterTime: true,
+        maxCheatingAttempts: 3,
         examinerName: req.user?.name || "CBT Examination Cell",
         updatedBy: req.user._id,
       });
@@ -1527,6 +1528,7 @@ const getExamConfig = async (req, res, next) => {
         autoSubmitAfterTime: config.autoSubmitAfterTime,
         calculatorEnabled: config.calculatorEnabled ?? false,
         activeCalculatorType: config.activeCalculatorType || null,
+        maxCheatingAttempts: Number.isInteger(config.maxCheatingAttempts) ? config.maxCheatingAttempts : 3,
         updatedAt: config.updatedAt,
       },
     });
@@ -1547,6 +1549,7 @@ const updateExamConfig = async (req, res, next) => {
       autoSubmitAfterTime,
       calculatorEnabled,
       activeCalculatorType,
+      maxCheatingAttempts,
     } = req.body;
 
     let parsedStartAt = null;
@@ -1597,6 +1600,10 @@ const updateExamConfig = async (req, res, next) => {
           typeof examinerName === "string" && examinerName.trim()
             ? examinerName.trim()
             : "CBT Examination Cell",
+        maxCheatingAttempts:
+          Number.isInteger(maxCheatingAttempts) && maxCheatingAttempts >= 1 && maxCheatingAttempts <= 99
+            ? maxCheatingAttempts
+            : (existingConfig?.maxCheatingAttempts ?? 3),
         updatedBy: req.user._id,
       },
       {
@@ -1620,6 +1627,7 @@ const updateExamConfig = async (req, res, next) => {
         autoSubmitAfterTime: config.autoSubmitAfterTime,
         calculatorEnabled: config.calculatorEnabled ?? false,
         activeCalculatorType: config.activeCalculatorType || null,
+        maxCheatingAttempts: Number.isInteger(config.maxCheatingAttempts) ? config.maxCheatingAttempts : 3,
         updatedAt: config.updatedAt,
       },
     });

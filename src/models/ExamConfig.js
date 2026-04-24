@@ -49,6 +49,13 @@ const examConfigSchema = new mongoose.Schema(
       enum: ["Simple", "Scientific ES991", "Scientific ES82", "Financial"],
       default: null,
     },
+    maxCheatingAttempts: {
+      type: Number,
+      required: true,
+      min: 1,
+      max: 99,
+      default: 3,
+    },
     examinerName: {
       type: String,
       trim: true,

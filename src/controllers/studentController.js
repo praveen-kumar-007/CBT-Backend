@@ -749,6 +749,10 @@ const getExamConfigForStudent = async (req, res, next) => {
             : true,
         calculatorEnabled: config?.calculatorEnabled ?? false,
         activeCalculatorType: config?.activeCalculatorType || null,
+        maxCheatingAttempts:
+          Number.isInteger(config?.maxCheatingAttempts)
+            ? config.maxCheatingAttempts
+            : 3,
       },
     });
   } catch (error) {

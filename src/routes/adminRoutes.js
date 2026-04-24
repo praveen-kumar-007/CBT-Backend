@@ -191,6 +191,10 @@ router.put(
       .withMessage(
         "activeCalculatorType must be one of the calculator types or null.",
       ),
+    body("maxCheatingAttempts")
+      .optional()
+      .isInt({ min: 1, max: 99 })
+      .withMessage("maxCheatingAttempts must be an integer between 1 and 99."),
     validateRequest,
   ],
   updateExamConfig,
