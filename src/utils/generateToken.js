@@ -1,4 +1,4 @@
-const jwt = require('jsonwebtoken');
+const jwt = require("jsonwebtoken");
 
 const computeDefaultTokenExpiry = () => {
   const now = new Date();
@@ -6,7 +6,8 @@ const computeDefaultTokenExpiry = () => {
   const midnight = new Date(now);
   midnight.setHours(24, 0, 0, 0);
 
-  const expiryMs = Math.max(sixHoursLater.getTime(), midnight.getTime()) - now.getTime();
+  const expiryMs =
+    Math.max(sixHoursLater.getTime(), midnight.getTime()) - now.getTime();
   return `${Math.ceil(expiryMs / 1000)}s`;
 };
 
@@ -14,7 +15,7 @@ const generateToken = (user) => {
   const secret = process.env.JWT_SECRET;
 
   if (!secret) {
-    throw new Error('JWT_SECRET is missing in environment variables.');
+    throw new Error("JWT_SECRET is missing in environment variables.");
   }
 
   return jwt.sign(
@@ -23,7 +24,7 @@ const generateToken = (user) => {
       role: user.role,
     },
     secret,
-    { expiresIn: process.env.JWT_EXPIRES_IN || computeDefaultTokenExpiry() }
+    { expiresIn: process.env.JWT_EXPIRES_IN || computeDefaultTokenExpiry() },
   );
 };
 

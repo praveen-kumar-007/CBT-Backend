@@ -1528,7 +1528,9 @@ const getExamConfig = async (req, res, next) => {
         autoSubmitAfterTime: config.autoSubmitAfterTime,
         calculatorEnabled: config.calculatorEnabled ?? false,
         activeCalculatorType: config.activeCalculatorType || null,
-        maxCheatingAttempts: Number.isInteger(config.maxCheatingAttempts) ? config.maxCheatingAttempts : 3,
+        maxCheatingAttempts: Number.isInteger(config.maxCheatingAttempts)
+          ? config.maxCheatingAttempts
+          : 3,
         updatedAt: config.updatedAt,
       },
     });
@@ -1601,7 +1603,9 @@ const updateExamConfig = async (req, res, next) => {
             ? examinerName.trim()
             : "CBT Examination Cell",
         maxCheatingAttempts:
-          Number.isInteger(maxCheatingAttempts) && maxCheatingAttempts >= 1 && maxCheatingAttempts <= 99
+          Number.isInteger(maxCheatingAttempts) &&
+          maxCheatingAttempts >= 1 &&
+          maxCheatingAttempts <= 99
             ? maxCheatingAttempts
             : (existingConfig?.maxCheatingAttempts ?? 3),
         updatedBy: req.user._id,
@@ -1627,7 +1631,9 @@ const updateExamConfig = async (req, res, next) => {
         autoSubmitAfterTime: config.autoSubmitAfterTime,
         calculatorEnabled: config.calculatorEnabled ?? false,
         activeCalculatorType: config.activeCalculatorType || null,
-        maxCheatingAttempts: Number.isInteger(config.maxCheatingAttempts) ? config.maxCheatingAttempts : 3,
+        maxCheatingAttempts: Number.isInteger(config.maxCheatingAttempts)
+          ? config.maxCheatingAttempts
+          : 3,
         updatedAt: config.updatedAt,
       },
     });
