@@ -96,13 +96,13 @@ const getQuestionsForStudent = async (req, res, next) => {
 
     const config = await ExamConfig.findOne({ tenantAdmin });
     const now = new Date();
-    if (config?.startAt && now < config.startAt) {
+    if (!isDemoGuest && config?.startAt && now < config.startAt) {
       return res.status(403).json({
         success: false,
         message: `Exam access opens at ${config.startAt.toISOString()}. Please try again after the scheduled start time.`,
       });
     }
-    if (config?.forceEndedAt && now >= config.forceEndedAt) {
+    if (!isDemoGuest && config?.forceEndedAt && now >= config.forceEndedAt) {
       return res.status(403).json({
         success: false,
         message:
@@ -170,6 +170,7 @@ const getQuestionsForStudent = async (req, res, next) => {
     }
 
     if (
+      !isDemoGuest &&
       !isRetakeAllowanceActive &&
       config?.startAt &&
       Number.isInteger(config.officialEntryWindowInMinutes)
